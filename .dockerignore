@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+.git
+.github
+tests
+docs
+data
+models
+*.egg-info
+.env
+NOTES.md
+LEARNING_LOG.md

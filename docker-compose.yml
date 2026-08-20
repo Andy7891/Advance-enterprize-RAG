@@ -1,0 +1,124 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.0
+    ports:
+      - "6333:6333" # REST API
+      - "6334:6334" # gRPC API
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5.26.0
+    ports:
+      - "7474:7474" # Browser UI
+      - "7687:7687" # Bolt protocol
+    environment:
+      NEO4J_AUTH: "${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:0.20.0
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # WHAT: Defines the name of the service in this Docker Compose cluster.
+  # WHY: Allows other containers to network with your application using 'http://api'.
+  # --------------------------------------------------------------------------------
+  api:
+
+    # --------------------------------------------------------------------------------
+    # WHAT: Tells Docker Compose that this image must be built from a local file.
+    # WHY: It cannot be pulled pre-built from a registry like Docker Hub.
+    # --------------------------------------------------------------------------------
+    build:
+
+      # --------------------------------------------------------------------------------
+      # WHAT: Specifies the root directory (build context) for the Docker engine.
+      # WHY: Paths in your Dockerfile (like COPY) are relative to this root folder.
+      # --------------------------------------------------------------------------------
+      context: .
+
+      # --------------------------------------------------------------------------------
+      # WHAT: Points to the exact location of the target configuration blueprint.
+      # WHY: Required when the Dockerfile is kept in a nested infrastructure sub-folder.
+      # --------------------------------------------------------------------------------
+      dockerfile: infra/docker/Dockerfile
+
+    # --------------------------------------------------------------------------------
+    # WHAT: Maps network access from the physical host machine into the container.
+    # WHY: Allows your machine's browser/tools to communicate with your running app.
+    # --------------------------------------------------------------------------------
+    ports:
+      - "8000:8000"
+
+    # --------------------------------------------------------------------------------
+    # WHAT: Injects runtime variables into the operating environment of your code.
+    # WHY: Configures your application without hardcoding credentials or configurations.
+    # --------------------------------------------------------------------------------
+    environment:
+      # WHAT: Target network address for a vector database cluster.
+      # WHY: Routes vector embeddings and similarity queries to the 'qdrant' service.
+      QDRANT_URL: "http://qdrant:6333"
+
+      # WHAT: Connection URI for the graph database using native binary protocol.
+      # WHY: Directs entity relationship and graph structural queries to 'neo4j'.
+      NEO4J_URI: "bolt://neo4j:7687"
+
+      # WHAT: Access username matching the target database instance.
+      # WHY: Uses local environment variables or defaults back to standard fallback value.
+      NEO4J_USER: "${NEO4J_USER:-neo4j}"
+
+      # WHAT: Access authorization secret key for the graph database instance.
+      # WHY: Secures database connections with a fallback placeholder during local setups.
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD:-changeme}"
+
+      # WHAT: Network endpoint connection string for local language model execution.
+      # WHY: Directs text processing and generation requests to the 'ollama' service.
+      OLLAMA_URL: "http://ollama:11434"
+
+      # WHAT: Authorization token string for cloud language model infrastructure.
+      # WHY: Passes external credentials down safely, failing over to blank if missing.
+      COHERE_API_KEY: "${COHERE_API_KEY:-}"
+
+    # --------------------------------------------------------------------------------
+    # WHAT: Orchestrates container initialization sequences and conditions.
+    # WHY: Prevents the app from starting or failing until dependencies are functional.
+    # --------------------------------------------------------------------------------
+    depends_on:
+      # WHAT: Dependency mapping requirement for vector lookups.
+      # WHY: Holds app initialization until the internal database health checks pass.
+      qdrant:
+        condition: service_healthy
+
+      # WHAT: Dependency mapping requirement for graph relationship lookups.
+      # WHY: Holds app initialization until the graph engine confirms ready status.
+      neo4j:
+        condition: service_healthy
+
+      # WHAT: Dependency mapping requirement for local model inferences.
+      # WHY: Holds app initialization until model execution endpoints answer calls.
+      ollama:
+        condition: service_healthy
+
+volumes:
+  qdrant_data:
+  neo4j_data:
+  ollama_data:
