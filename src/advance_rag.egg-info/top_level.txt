@@ -1,6 +1,0 @@
-api
-core
-ingestion
-ops
-retrieval
-ui

@@ -25,26 +25,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      # TODO(learning): Ruff has two separate jobs it can do here:
-      #   1. Style/error linting (replaces flake8) — the subcommand is `ruff check`.
-      #   2. Formatting verification, NON-mutating (replaces `black --check`) — the
-      #      subcommand is `ruff format`, and there's a flag that makes it just report
-      #      whether files WOULD be reformatted, instead of rewriting them. Look at
-      #      `ruff format --help` to find it (hint: same flag name pattern as `black`'s).
-      # Run both. Point ruff at the src/ and tests/ directories.
+      # `ruff check` = linting (flake8's job). `ruff format --check` = formatting
+      # verification (black --check's job). --check is NON-mutating on purpose: CI
+      # asserts the committed code is already correct, it never silently rewrites it.
       - name: Ruff lint + format check
         run: |
-          echo "TODO: run ruff check on src/ and tests/"
-          echo "TODO: run ruff format in check-only (non-mutating) mode on src/ and tests/"
+          ruff check src/ tests/
+          ruff format --check src/ tests/
 
-      # TODO(learning): mypy needs a target directory/module to check. Point it at `src/`.
-      # First run it and just read the errors it produces on our current codebase — don't
-      # fix anything yet. Ask yourself: are these real type problems, or is mypy just
-      # missing type stubs for a third-party library? `ignore_missing_imports = true` in
-      # pyproject.toml already suppresses the second category.
+      # Separate from ruff: ruff does not type-check at all. ignore_missing_imports
+      # in pyproject.toml suppresses "third-party lib ships no stubs" noise so only
+      # real type errors surface here.
       - name: mypy type check
         run: |
-          echo "TODO: run mypy against the src/ directory"
+          mypy src/
 
   test:
     runs-on: windows-latest
@@ -64,12 +58,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      # TODO(learning): run pytest against the tests/ directory. Add the `-v` flag while
-      # you're setting this up so failures are easy to read in the Actions log; you can
-      # drop it back to quiet (`-q`) once this is stable.
+      # -v so a failure in the Actions log names the exact failing test, not just a dot.
       - name: Run pytest
         run: |
-          echo "TODO: run pytest against tests/"
+          pytest tests/ -v
 
   build:
     runs-on: windows-latest
@@ -78,15 +70,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # TODO(learning): `docker build` needs three things here:
-      #   1. `-f` pointing at our Dockerfile's actual path (it's NOT at the repo root —
-      #      check infra/docker/ from Step 1.1).
-      #   2. `-t` to tag the resulting image with some name (the tag doesn't matter much
-      #      here since we never push it — this job exists purely to PROVE the Dockerfile
-      #      still builds, catching "I changed pyproject.toml and broke the image" bugs).
-      #   3. The build context path at the end (recall Step 1.1's docs/docker_deep_dive.md,
-      #      section 1.9 — what does "context" actually need to include, and why can't it
-      #      be infra/docker/ itself?).
+      # Context is `.` (repo root), NOT infra/docker/, because the Dockerfile's
+      # COPY instructions reference pyproject.toml and src/ which live at the root.
+      # The image is never pushed — this job exists only to prove the Dockerfile
+      # still builds, catching "changed pyproject.toml, broke the image" drift.
       - name: Build Docker image (validates Dockerfile)
         run: |
-          echo "TODO: docker build -f <dockerfile-path> -t advance-rag:ci <context>"
+          docker build -f infra/docker/Dockerfile -t advance-rag:ci .

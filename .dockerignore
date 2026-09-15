@@ -6,6 +6,7 @@ __pycache__
 tests
 docs
 data
+practice codes
 models
 *.egg-info
 .env

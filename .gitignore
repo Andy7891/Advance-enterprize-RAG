@@ -1,0 +1,49 @@
+# --- Virtual environments -------------------------------------------------
+# The single most important entry here: a venv is machine-specific and huge
+# (32k+ files). It is rebuilt from pyproject.toml, never shared via git.
+.venv/
+venv/
+env/
+
+# --- Python build / bytecode artifacts ------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# --- Secrets ---------------------------------------------------------------
+# .env holds real API keys (COHERE_API_KEY, NEO4J_PASSWORD).
+# .env.example is committed on purpose as the documented template.
+.env
+.env.local
+*.pem
+*.key
+
+# --- Test / tooling caches -------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# --- Jupyter ---------------------------------------------------------------
+# Autosave duplicates that would otherwise pollute data/ ingestion
+# (see EXCLUDED_DIR_NAMES in src/ingestion/schemas.py).
+.ipynb_checkpoints/
+
+# --- Local models / large binaries ----------------------------------------
+models/
+*.gguf
+*.bin
+*.safetensors
+
+# --- OS / editor noise -----------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

@@ -4,9 +4,11 @@ This is a self-contained learning path for Step 1.2:
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) and the
 `[tool.ruff]`/`[tool.mypy]` sections of [`pyproject.toml`](../pyproject.toml).
 
-**How to use this doc:** for each concept, attempt the exercise yourself — actually run the
+**How to use this doc:** for each concept, attempt every exercise yourself — actually run the
 commands, actually push a branch where a push is called for — form your own explanation,
-*then* read the checkpoint. Don't peek first.
+*then* read the checkpoint. Don't peek first. Each exercise ends with an explicit
+**Concept & Learning** line spelling out exactly what that exercise proved — read that even
+if you skip the checkpoint reveal.
 
 ---
 
@@ -19,7 +21,27 @@ about the state of the repo: "the code is styled/typed correctly," "the tests pa
 Docker image still builds." `pyproject.toml`'s `[tool.ruff]`/`[tool.mypy]` sections
 configure *how strict* two of those checks are.
 
-Think of your GitHub repository as a factory manufacturing a car, and this whole process as the quality control inspector.🚗 The Analogy Breakdownci.yml (The Quality Control Checklist): This is a master checklist. It says, "Every time a new car design is submitted, we must run three specific tests before allowing it on the road."GitHub Actions Workflow (The Automated Factory Line): This is the automated system that executes the checklist. Nobody has to manually test the car; the factory line does it automatically in the cloud.push / pull_request (The Triggers): This is the action of submitting your work. Whenever you save new code (push) or ask to merge it into the main project (pull_request), the factory line automatically starts.The 3 Jobs (The Independent Test Stations):lint Station: Checks the look and structure. Is the car painted correctly? Are the screws tight? (Checks if code looks neat and has no obvious typos).test Station: Checks the functionality. Does the engine start? Do the brakes work? (Runs code tests).build Station: Checks assembly. Can we successfully package this car into a box to ship it? (Creates the Docker image).pyproject.toml (The Factory Rulebook): This file sets the exact rules for the stations. For example, it tells the lint station exactly how picky to be about the spacing, or how strict to be about code rules (ruff and mypy).🛠️ Summary of the RelationshipYou send code to GitHub.ci.yml wakes up and starts three automated test stations (lint, test, build).These stations use the rules written in pyproject.toml to decide if your code passes or fails.
+Think of your GitHub repository as a factory manufacturing a car, and this whole process as
+the quality control inspector. 🚗
+
+**The Analogy Breakdown**
+- **`ci.yml` (The Quality Control Checklist):** a master checklist — "every time a new car
+  design is submitted, run three specific tests before it's allowed on the road."
+- **GitHub Actions Workflow (The Automated Factory Line):** the automated system executing
+  the checklist. Nobody manually tests the car; the factory line does it in the cloud.
+- **`push` / `pull_request` (The Triggers):** submitting your work. Saving new code (`push`)
+  or asking to merge it (`pull_request`) automatically starts the line.
+- **The 3 Jobs (Independent Test Stations):**
+  - `lint` Station: is it painted correctly, are the screws tight (code looks neat, no
+    obvious typos).
+  - `test` Station: does the engine start, do the brakes work (code tests actually run).
+  - `build` Station: can we package this car into a shippable box (Docker image builds).
+- **`pyproject.toml` (The Factory Rulebook):** sets exact rules for the stations — how picky
+  `lint` should be about spacing, how strict `ruff`/`mypy` should be.
+
+**Summary of the relationship:** you send code to GitHub → `ci.yml` wakes three automated
+stations (`lint`, `test`, `build`) → those stations use the rules from `pyproject.toml` to
+decide pass/fail.
 
 Concept map, in dependency order:
 
@@ -57,9 +79,32 @@ all, defeating the "catch problems before merge" purpose.
 
 **Canonical reading:** [GitHub Actions: events that trigger workflows](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows)
 
-**Micro-exercise (10 min):**
+**Exercise 1 (10 min) — observe the two triggers separately:**
 Create a new branch, push it (don't open a PR yet), and check the Actions tab on GitHub —
 does anything run? Then open a PR from that branch — check again.
+> **Concept & Learning:** `push` and `pull_request` are two *separate* events, each needing
+> its own listener in `on:`. A branch existing on GitHub is not the same as either event
+> firing — you directly observe that a bare push-to-a-feature-branch triggers nothing here,
+> because `push:` is scoped to `main`/`master` only, while opening the PR fires the second,
+> independent `pull_request` listener.
+
+**Exercise 2 (10 min) — add and test a new trigger:**
+Add `workflow_dispatch:` as a third key under `on:` (a manual trigger, no branch filter
+needed). Push it, then go to the Actions tab → select the CI workflow → look for a "Run
+workflow" button and click it.
+> **Concept & Learning:** `on:` isn't limited to git events — `workflow_dispatch` proves
+> workflows can be triggered by a human clicking a button in the GitHub UI, useful later for
+> things like manually re-running an evaluation suite without needing a code change to
+> trigger it.
+
+**Exercise 3 (10 min) — scope push to more branches:**
+Change `push: branches: [ main, master ]` to also include a wildcard, e.g.
+`branches: [ main, master, 'feature/**' ]`. Push a commit directly to a branch named
+`feature/test-trigger` (not via PR) and confirm the workflow now runs on that push alone.
+> **Concept & Learning:** branch filters accept glob patterns, not just exact names — this
+> is how teams commonly run lightweight checks on every feature-branch push while reserving
+> heavier checks (deploys, etc.) for `main` only, by writing different `on:` rules per
+> workflow file.
 
 **Checkpoint:**
 *Why does pushing a branch with no PR open sometimes NOT trigger the workflow, even though
@@ -98,10 +143,32 @@ becomes the *sum* of all three jobs instead of the *max*.
 
 **Canonical reading:** [GitHub Actions: jobs](https://docs.github.com/en/actions/using-jobs/using-jobs-in-a-workflow)
 
-**Micro-exercise (10 min):**
+**Exercise 1 (10 min) — observe parallelism in the run graph:**
 In the Actions tab after a push, look at the visual graph GitHub draws for the workflow run
 — are `lint`, `test`, `build` shown side-by-side or in a chain? Note their individual start
 timestamps in the logs — do they overlap?
+> **Concept & Learning:** the visual graph is a direct rendering of job dependencies (or
+> lack thereof) — three lanes with no connecting arrows is GitHub showing you, concretely,
+> "these have no `needs:` relationship, so I scheduled them all at once."
+
+**Exercise 2 (10 min) — merge two jobs and observe the loss of independent signal:**
+On a scratch branch, temporarily copy `test`'s steps into the bottom of `lint`'s `steps:`
+list (so `lint` now also runs pytest), delete the standalone `test` job. Break a lint rule
+AND a test on purpose in the same commit, push, and see how many separate red marks you get
+instead of two.
+> **Concept & Learning:** merging jobs collapses two independent signals into one — you can
+> no longer tell, from the check list alone, "linting failed" vs "tests failed" without
+> opening the log, directly demonstrating the value of the split you'd otherwise take for
+> granted.
+
+**Exercise 3 (10 min) — add a fourth, genuinely independent job:**
+Add a new job, e.g. `check-yaml`, with a single step that runs
+`python -c "import yaml; yaml.safe_load(open('docker-compose.yml'))"` (validates the compose
+file parses as YAML) on `runs-on: windows-latest`. Push and confirm it runs in parallel with
+the existing three.
+> **Concept & Learning:** adding a job is just adding another top-level key under `jobs:` —
+> there's no registration step, no wiring — GitHub Actions treats every job under `jobs:` as
+> automatically parallel-eligible unless you explicitly add `needs:`.
 
 **Checkpoint:**
 *If `lint` takes 90 seconds and `test` takes 60 seconds and `build` takes 45 seconds, and
@@ -132,10 +199,31 @@ matching runners.
 
 **Canonical reading:** [GitHub Actions: runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners)
 
-**Micro-exercise (10 min):**
+**Exercise 1 (10 min) — mix runner OSes across jobs:**
 Temporarily change just the `build` job's `runs-on` to `ubuntu-latest`, push, and compare
 that job's total duration in the Actions log against a previous run's `build` job duration
 on `windows-latest`.
+> **Concept & Learning:** `runs-on` is genuinely per-job, not workflow-wide — you directly
+> measure that the same `docker build` command completes faster on `ubuntu-latest`, since
+> Linux runners run Docker natively rather than through a Windows-hosted Linux VM layer.
+
+**Exercise 2 (10 min) — print the runner's own identity:**
+Add a step `- run: echo "OS is $env:RUNNER_OS, running on $env:RUNNER_NAME"` (PowerShell
+syntax, since we're on Windows runners) to any job, push, and read the printed values in the
+log.
+> **Concept & Learning:** GitHub Actions exposes runner metadata as environment variables
+> (`RUNNER_OS`, `RUNNER_NAME`, etc.) — useful for writing steps that behave differently
+> depending on which OS they're actually executing on, relevant once you have jobs spanning
+> multiple runner types.
+
+**Exercise 3 (10 min) — try a runner version pin instead of `-latest`:**
+Change one job's `runs-on` to a specific pinned version instead of the floating tag, e.g.
+`windows-2022` instead of `windows-latest` (check GitHub's current supported labels first).
+Push and confirm it still runs.
+> **Concept & Learning:** `-latest` is itself a moving target GitHub updates periodically —
+> pinning to a specific image version trades "always current" for "always identical,"
+> the same reproducibility trade-off you already made explicitly with package versions in
+> `pyproject.toml` back in Step 1.1.
 
 **Checkpoint:**
 *Is there any requirement that all jobs in one workflow use the same runner OS?*
@@ -166,10 +254,32 @@ runs against an *empty* runner filesystem (no repo checked out at all); `pip ins
 
 **Canonical reading:** [GitHub Actions: workflow syntax — jobs.<job_id>.steps](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobssteps)
 
-**Micro-exercise (10 min) — prove checkout is load-bearing:**
+**Exercise 1 (10 min) — prove checkout is load-bearing:**
 Duplicate the `test` job as a throwaway `test_broken` job, remove its `actions/checkout@v4`
 step, push to a scratch branch, and read the exact failure message from the
 `pip install -e ".[dev]"` step.
+> **Concept & Learning:** an action isn't optional boilerplate — `checkout` is the *only*
+> thing that puts your repo's files onto the runner's disk at all; every later step
+> implicitly depends on it even though nothing in the YAML says so explicitly.
+
+**Exercise 2 (10 min) — replace an action with raw `run:` commands:**
+Replace `actions/checkout@v4` with manual git commands:
+`run: git clone https://github.com/<you>/<repo>.git . ` (adjust for your actual remote and
+auth). Push and see whether it works, and how much more fragile/verbose it is compared to
+one line.
+> **Concept & Learning:** actions like `checkout` aren't magic — they're wrapping exactly
+> this kind of shell logic (git clone/fetch, correct ref checkout, credential handling) but
+> tested, versioned, and maintained so you don't have to get all the edge cases right
+> yourself (shallow clones, submodules, correct SHA checkout for a PR's merge commit, etc.).
+
+**Exercise 3 (10 min) — pin an action to a specific SHA instead of a tag:**
+Look up `actions/checkout`'s latest release commit SHA on GitHub, and change
+`uses: actions/checkout@v4` to `uses: actions/checkout@<full-40-char-sha>`. Push and confirm
+it still works identically.
+> **Concept & Learning:** `@v4` is a mutable tag that could theoretically be moved by the
+> action's maintainer (or, in a supply-chain-attack scenario, by someone malicious); pinning
+> to an immutable commit SHA is a real hardening technique used in security-conscious CI
+> setups — worth knowing even if you don't adopt it everywhere.
 
 **Checkpoint:**
 *Why does removing `setup-python` (but keeping `checkout`) NOT necessarily fail immediately
@@ -205,9 +315,37 @@ of a config mismatch between two files catching itself automatically.
 
 **Canonical reading:** [actions/setup-python README](https://github.com/actions/setup-python) (see "caching packages" section)
 
-**Micro-exercise (10 min):**
+**Exercise 1 (10 min) — force a version mismatch on purpose:**
 Change `python-version: '3.11'` to `'3.10'` on a scratch branch, push, and read the exact
 pip/setuptools error in the Actions log.
+> **Concept & Learning:** `requires-python` in `pyproject.toml` isn't just documentation —
+> pip actively refuses to install a package onto an interpreter version outside that range,
+> so a CI/pyproject.toml mismatch fails loud and immediately rather than causing subtle
+> runtime bugs later.
+
+**Exercise 2 (10 min) — measure the cache's real effect:**
+Push a commit that changes nothing dependency-related, and compare the "Install project +
+dev dependencies" step's duration to a previous run where a pin *did* change (cache miss).
+Look for a "Cache restored" / "Cache saved" message in the setup-python step's own log
+output.
+> **Concept & Learning:** you get direct, timed proof of what caching buys you — often a
+> multi-minute install collapses to a few seconds — and you learn to read the cache
+> hit/miss log line as a diagnostic tool for "why did this run suddenly get slow again."
+
+**Exercise 3 (10 min) — test multiple Python versions with a matrix:**
+Replace the single `python-version: '3.11'` with a matrix:
+```yaml
+strategy:
+  matrix:
+    python-version: ['3.11', '3.12']
+```
+and reference `${{ matrix.python-version }}` in the `setup-python` step. Push and watch the
+`lint` job fan out into two parallel sub-jobs.
+> **Concept & Learning:** `strategy.matrix` is how real-world open source projects test
+> compatibility across multiple versions/platforms without hand-writing N duplicate jobs —
+> one job definition, run N times with different inputs. (Note: our actual
+> `requires-python = ">=3.11,<3.12"` constraint would make 3.12 fail on purpose here — a
+> good illustration of why the constraint exists.)
 
 **Checkpoint:**
 *What does `cache: 'pip'` actually use as the cache key — does it cache forever regardless
@@ -241,10 +379,35 @@ not found."
 
 **Canonical reading:** [pip docs: editable installs](https://pip.pypa.io/en/stable/topics/local-project-installs/#editable-installs) and [PEP 621: optional-dependencies](https://peps.python.org/pep-0621/#dependencies-optional-dependencies)
 
-**Micro-exercise (5 min):**
+**Exercise 1 (5 min) — reproduce the missing-tool failure:**
 Temporarily change `pip install -e ".[dev]"` to `pip install -e .` in the `lint` job only,
 push to a scratch branch, watch the `Ruff lint + format check` (or whatever step you've
 filled in) step fail with a "command not found"-style error.
+> **Concept & Learning:** `[dev]` isn't decorative syntax — dropping it silently removes
+> every dev-only tool from the environment, and the failure surfaces one step later, at the
+> point of *use*, not at install time (the install itself still succeeds) — a good lesson in
+> reading which step actually failed, not just that "something" failed.
+
+**Exercise 2 (10 min) — install a non-editable build instead:**
+Change `pip install -e ".[dev]"` to `pip install ".[dev]"` (drop `-e`) in the `test` job,
+push, and confirm the pytest step still passes. Then locally edit `src/api/main.py`, and
+without reinstalling, try running `pytest` against a fresh `pip install .` (non-editable)
+in a scratch venv — see whether your edit takes effect.
+> **Concept & Learning:** in CI, editable vs non-editable makes almost no practical
+> difference (the runner is thrown away after one use, nothing is edited mid-run), but
+> locally it's the entire point — editable installs mean code edits are picked up
+> immediately, non-editable installs freeze a snapshot at install time. This is why local
+> dev uses `-e` and some production Docker images intentionally don't (Step 1.1's Dockerfile
+> uses a non-editable `pip install --prefix=/install .` for exactly that reason — a
+> deliberate, frozen artifact).
+
+**Exercise 3 (10 min) — split core vs dev install into two explicit steps:**
+Change the `lint` job's install step to two separate `run:` lines:
+`pip install .` then `pip install ".[dev]"` (redundant but instructive), and time each one
+in the log.
+> **Concept & Learning:** you can see directly that the second command is nearly instant
+> (pip recognizes the base package + its deps are already satisfied) — reinforcing that
+> `.[dev]` is additive on top of the core dependency set, not a totally separate resolve.
 
 **Checkpoint:**
 *Why does this same mistake NOT break the `build` job?*
@@ -280,13 +443,30 @@ check`-passing code with wildly different formatting, and CI wouldn't flag it.
 
 **Canonical reading:** [Ruff docs: linter vs formatter](https://docs.astral.sh/ruff/formatter/) and [Ruff rules reference](https://docs.astral.sh/ruff/rules/)
 
-**Micro-exercise (10 min) — feel the difference directly:**
-1. In a scratch `.py` file, write `import os` and never use `os` — run `ruff check` on it
-   (should flag F401 unused import) and separately `ruff format --check` on it (should pass
-   fine — unused imports don't affect formatting).
-2. Now write a syntactically fine but oddly-formatted file (e.g., `x=1;y  =   2`) — run
-   `ruff check` (may or may not flag anything depending on selected rules) vs `ruff format
-   --check` (will flag it).
+**Exercise 1 (10 min) — an unused import passes format, fails lint:**
+In a scratch `.py` file, write `import os` and never use `os` — run `ruff check` on it
+(should flag F401 unused import) and separately `ruff format --check` on it (should pass
+fine — unused imports don't affect formatting).
+> **Concept & Learning:** direct proof the two commands check disjoint properties — a file
+> can be "correctly formatted" and still contain a real bug/violation.
+
+**Exercise 2 (10 min) — bad formatting passes lint, fails format:**
+Write an oddly-formatted but rule-clean file (e.g. `x=1;y  =   2` — no unused names, no
+undefined variables) — run `ruff check` (may pass, since our `select` set doesn't include
+formatting-adjacent rules) vs `ruff format --check` (will flag it).
+> **Concept & Learning:** the reverse case — formatting problems don't automatically count
+> as "lint violations" unless you specifically select rules that overlap with style. This is
+> why both commands earn their place in the CI job rather than one subsuming the other.
+
+**Exercise 3 (10 min) — expand the `select` rule set and see new violations appear:**
+In `pyproject.toml`, temporarily add `"I"` (isort-style import sorting) to
+`[tool.ruff.lint] select`. Deliberately write two imports in the wrong order in a scratch
+file, run `ruff check` before and after the config change.
+> **Concept & Learning:** `select` in `[tool.ruff.lint]` is literally an opt-in list — Ruff
+> ships dozens of rule categories, and only the ones you explicitly select run. This
+> directly demonstrates that "ruff check passed" means "passed the rules we chose," not
+> "passed every rule ruff could possibly check" — an important distinction when reading any
+> green checkmark.
 
 **Checkpoint:**
 *Give one example of a file that would fail `ruff check` but pass `ruff format --check`,
@@ -323,7 +503,7 @@ annotations yet.
 
 **Canonical reading:** [mypy docs: getting started](https://mypy.readthedocs.io/en/stable/getting_started.html) and [mypy: strict mode](https://mypy.readthedocs.io/en/stable/existing_code.html#introduce-stricter-options)
 
-**Micro-exercise (10 min) — see mypy catch something ruff can't:**
+**Exercise 1 (10 min) — see mypy catch a return-type bug ruff can't:**
 ```python
 # scratch_type_bug.py
 def get_port(settings_value: str) -> int:
@@ -331,6 +511,26 @@ def get_port(settings_value: str) -> int:
 ```
 Run `ruff check scratch_type_bug.py` (passes clean) then `mypy scratch_type_bug.py`
 (should report a return-type mismatch).
+> **Concept & Learning:** direct, hands-on proof that pattern-based linting and type
+> inference are fundamentally different analyses — a bug totally invisible to ruff is
+> mypy's entire reason for existing.
+
+**Exercise 2 (10 min) — flip `strict = true` and count the noise:**
+Temporarily set `strict = true` under `[tool.mypy]`, run `mypy src/`, and count how many
+errors appear. Read a few — are they "you called this with the wrong type" bugs, or
+"this function has no return type annotation" complaints?
+> **Concept & Learning:** this is a live measurement of your current type-hint coverage, not
+> a bug count — most `strict` errors on a young codebase are annotation gaps, not logic
+> errors, which is exactly why we chose `strict = false` for now rather than treating strict
+> mode as an unconditional improvement to switch on immediately.
+
+**Exercise 3 (10 min) — see `ignore_missing_imports` do its job:**
+Temporarily set `ignore_missing_imports = false` under `[tool.mypy]`, then run `mypy src/`
+— look for errors about a third-party import (e.g. `qdrant_client` or `cohere`) having "no
+stub file" or "module unknown." Revert the setting and rerun to confirm those errors vanish.
+> **Concept & Learning:** this setting exists specifically to distinguish "your code has a
+> real type bug" from "a library you depend on simply doesn't ship type information" — two
+> very different problems that would otherwise be mixed into one undifferentiated error list.
 
 **Checkpoint:**
 *Why doesn't `ruff check` catch this obviously-wrong return type, when it catches other
@@ -365,11 +565,33 @@ green check that's lying about the state of your actual commit.
 
 **Canonical reading:** [Ruff CLI docs: format command](https://docs.astral.sh/ruff/formatter/#ci-integration) — explicitly documents the CI `--check` pattern.
 
-**Micro-exercise (5 min) — prove the false-green trap:**
+**Exercise 1 (5 min) — prove the false-green trap:**
 On a scratch branch, deliberately mis-format a file, then locally run plain `ruff format
 <file>` (mutating) followed immediately by `ruff format --check <file>` — see the second
 command now pass (because the first one already fixed it, right there on your machine,
 which is fine to do *locally* but is exactly what you must NOT rely on in CI).
+> **Concept & Learning:** you experience firsthand how a mutating command can make a
+> non-mutating check pass "for the wrong reason" — the file was fixed on your disk, not
+> validated as already-correct, which is a meaningfully different guarantee.
+
+**Exercise 2 (10 min) — put the mutating command in CI on purpose and see the false-green:**
+Temporarily change the `lint` job's step to run plain `ruff format src/ tests/` (mutating,
+no `--check`) instead. Commit an intentionally mis-formatted file, push, and watch the job
+pass green despite the pushed commit being badly formatted.
+> **Concept & Learning:** this is the anti-pattern made concrete — the job reports success,
+> but if you then `git pull` and look at your own repo, the file is STILL mis-formatted,
+> because the runner's "fix" never left the disposable VM. A green check here is actively
+> misleading about the state of your repository.
+
+**Exercise 3 (10 min) — find the equivalent flag for another tool:**
+Check whether `mypy` or `pytest` have any mutating "fix" modes at all (hint: neither
+normally does — they're inherently read-only/reporting tools). Then check `ruff check
+--fix` specifically — run it locally on a file with an auto-fixable violation (e.g. an
+unused import) and see it actually deleted from the file.
+> **Concept & Learning:** the "non-mutating in CI" pattern is specific to tools that *can*
+> mutate (formatters, autofixers) — mypy and pytest are naturally safe for CI as-is since
+> they never rewrite your source, which is worth recognizing as a category distinction
+> rather than a rule you need to apply to every tool uniformly.
 
 **Checkpoint:**
 *If your CI step used mutating `ruff format` instead of `--check`, and it "fixed" a file
@@ -402,26 +624,51 @@ discover it the next time you or a reviewer manually tried `docker compose build
 
 **Canonical reading:** [Docker docs: docker build CLI reference](https://docs.docker.com/reference/cli/docker/buildx/build/)
 
-**Micro-exercise (10 min) — reproduce a Dockerfile break that lint/test wouldn't catch:**
-On a scratch branch, add a nonexistent package to `pyproject.toml`'s `dependencies`
-(e.g., `"totally-fake-package-xyz==1.0.0"`), push, and check: does `lint` job fail? Does
-`test` job fail? Does `build` job fail?
+**Exercise 1 (10 min) — reproduce a real, shared-fragility break:**
+On a scratch branch, change a real, existing pin in `pyproject.toml` to something that
+conflicts with a transitive dependency (recreate Step 1.1's exact `pydantic-settings==2.7.1`
+regression on purpose). Push and check: does `lint` fail? Does `test` fail? Does `build`
+fail? All at the same underlying `pip install` step, just in three different contexts.
+> **Concept & Learning:** all three jobs share the same underlying fragility to a bad pin —
+> they just each discover it independently, in parallel, via their own separate `pip
+> install` (two on the runner directly, one inside the Docker build) — none gates the
+> others, but a bad pin is virtually guaranteed to turn all three red simultaneously.
+
+**Exercise 2 (10 min) — break ONLY the Dockerfile, not pyproject.toml:**
+Introduce a typo into `infra/docker/Dockerfile` only (e.g., misspell `COPY src ./src` as
+`COPY srcc ./src`) — leave `pyproject.toml` completely untouched. Push and confirm: `lint`
+and `test` stay green, only `build` fails.
+> **Concept & Learning:** THIS is the scenario that actually demonstrates why the `build`
+> job earns its place independently — a bug confined entirely to Docker-specific files is
+> invisible to any job that never invokes Docker, proving `build` checks something no other
+> job can substitute for.
+
+**Exercise 3 (10 min) — inspect the build job's actual image afterward:**
+After a successful `build` job run, note that the built image isn't kept anywhere (no
+`docker push`, no artifact upload) — it simply vanishes when the runner is destroyed. Add a
+step using `actions/upload-artifact` (or simpler: just `docker save advance-rag:ci -o
+image.tar` followed by inspecting `ls -la image.tar` in the log) to make the build's output
+tangible instead of implicit.
+> **Concept & Learning:** by default this job proves a *capability* ("this can be built")
+> without preserving *evidence* (the actual image) — useful to realize now, since a future
+> step (e.g. pushing to a registry, or deploying) would need an explicit additional step to
+> persist or publish that artifact rather than just validating it can exist.
 
 **Checkpoint:**
-*Why would `lint` and `test` most likely still pass green in that scenario, even though the
-project is now genuinely broken for anyone trying to build the Docker image?*
+*Why would `lint` and `test` most likely still pass green in the pin-conflict scenario from
+Exercise 1, even though the project is now genuinely broken for anyone trying to build the
+Docker image?*
 
 <details><summary>Reveal</summary>
-Because `lint` and `test` only run `pip install -e ".[dev]"` against packages already cached
-by `setup-python`'s `cache: 'pip'` from a previous successful run, or freshly resolve from
-PyPI directly on the runner — if the fake package genuinely doesn't exist on PyPI, actually
-BOTH would fail too (pip install fails for everyone identically, cache or not). Retry the
-exercise with a real-but-broken scenario instead: pin an existing package to a version that
-conflicts with another dependency (recreating Step 1.1's `pydantic-settings` conflict on
-purpose) — THEN you'd see `lint`/`test` fail at the `pip install` step exactly like `build`
-would fail at its own `pip install` inside the Dockerfile — proving all three jobs actually
-share the same underlying fragility to a bad pin, just discovered independently, in
-parallel, rather than gating each other.
+Trick question, based on how Exercise 1 is actually set up: they would NOT stay green in
+that scenario — a genuine pip resolver conflict fails identically wherever `pip install`
+runs, so `lint` and `test` (which both run `pip install -e ".[dev]"` directly on the
+runner) would fail at that exact step, same as `build`'s internal `pip install` inside the
+Dockerfile. All three share the same underlying fragility to a bad pin. The scenario that
+DOES isolate `build` as the only failure is Exercise 2 — a bug confined to Docker-only files
+that `pyproject.toml`-driven jobs never touch. The lesson: not every "Docker-related" bug is
+actually Docker-specific — some are dependency bugs that happen to also break Docker,
+because Docker independently runs the same broken command.
 </details>
 
 ---
@@ -446,10 +693,33 @@ yourself "we use 100."
 
 **Canonical reading:** [Ruff docs: configuration discovery](https://docs.astral.sh/ruff/configuration/) and [mypy docs: config file](https://mypy.readthedocs.io/en/stable/config_file.html)
 
-**Micro-exercise (5 min):**
+**Exercise 1 (5 min) — diff behavior with and without config:**
 Comment out the entire `[tool.ruff]` and `[tool.ruff.lint]` blocks in `pyproject.toml`, run
 `ruff check src/` locally, and diff the output against a run with the config restored — do
 different violations get flagged?
+> **Concept & Learning:** you directly observe Ruff's *default* rule set differs from the
+> explicit `select = ["E", "F", "W"]` we chose — proving the config file is actively
+> steering behavior, not just documenting an assumed default.
+
+**Exercise 2 (10 min) — override config via CLI flag and see which wins:**
+With `[tool.ruff] line-length = 100` still in place, run
+`ruff format --check --line-length 79 src/` (an explicit CLI override). Compare its verdict
+on a file to plain `ruff format --check src/` (using the config file's 100).
+> **Concept & Learning:** CLI flags take precedence over `pyproject.toml` config when both
+> are given — useful to know for one-off local experiments, but exactly why the CI step
+> should NOT pass ad-hoc flags that silently diverge from the checked-in config, since that
+> would make CI enforce different rules than what a contributor sees running the bare
+> command locally.
+
+**Exercise 3 (10 min) — prove config is discovered by location, not "installed":**
+Copy one source file (e.g. `src/core/config.py`) to a scratch folder completely outside this
+repo (no `pyproject.toml` anywhere in its parent directories). Run `ruff format --check` on
+it from there and compare the verdict to running it from inside the repo.
+> **Concept & Learning:** Ruff walks upward from the target file looking for a config file
+> to adopt — outside any repo, it falls back to built-in defaults silently, with no warning
+> that your `line-length = 100` preference wasn't applied. This is why tool behavior can
+> differ between "run inside the repo" and "run against a copied/moved file," a subtle trap
+> if you ever script something that operates on files outside the project root.
 
 **Checkpoint:**
 *If you ran `ruff format --check` from a completely different directory outside this repo,

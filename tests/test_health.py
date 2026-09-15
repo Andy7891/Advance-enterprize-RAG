@@ -1,6 +1,7 @@
 """Smoke test: proves pytest + the API package import correctly in CI.
 Real ingestion/retrieval tests will replace/join this once that logic exists.
 """
+
 from fastapi.testclient import TestClient
 
 from src.api.main import app
