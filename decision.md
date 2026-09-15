@@ -45,3 +45,13 @@ Forward-only untrack of `.venv` (new commit) | Amend Initial commit + force-push
 
 **D-2026-09-15-13 — clearing deliberate learning exercises**
 Filled in all five CI TODOs and ran `ruff format` | Leaving them as hands-on exercises | CI was passing while asserting nothing, which is worse than no CI — a green check that verifies nothing actively misleads | Flip never; the exercises remain available in `docs/ci_deep_dive.md` without leaving the live pipeline hollow.
+
+---
+
+## Offset-drift fix (2026-09-15, same day, after P2-M2)
+
+**D-2026-09-15-14 — recovering chunk character offsets**
+Whitespace-tolerant regex search (`\s+` between the chunk's words) | (a) trusting `SemanticChunker`'s own `start_index`; (b) plain `str.find` | `start_index` drifts because the splitter rebuilds chunks with single spaces then advances its tracker by the REBUILT length; plain `str.find` fails too, because that same normalisation means the rebuilt chunk often is not verbatim present in the source — verified, it fell back to the broken estimate on the exact repro case | Flip to tracking positions during splitting ourselves if we ever replace `SemanticChunker` with a hand-rolled splitter, which would make offsets exact by construction rather than recovered after the fact.
+
+**D-2026-09-15-15 — the correctness criterion for offsets**
+Assert `source[start:end].split() == chunk.text.split()` | Assert byte-for-byte `source[start:end] == chunk.text` | Byte equality is impossible by construction: the slice retains the source's blank lines while the chunk text has single spaces. Word-level equality proves the span points at the right REGION, which is what a UI highlight actually needs | Flip to byte equality only if chunk text is ever reconstructed from the source slice itself rather than from re-joined sentences.

@@ -149,3 +149,40 @@ def test_works_on_a_real_corpus_file(chunker):
     assert chunks
     assert all(c.source_path == "company/about.md" for c in chunks)
     assert all(c.text.strip() for c in chunks)
+
+
+def test_offsets_survive_blank_lines_between_sentences(chunker):
+    # The splitter rebuilds chunks with single spaces, so a blank-line
+    # separator in the source used to make every later offset drift.
+    text = "Alpha topic sentence one.\n\nBeta topic sentence two, quite different now."
+    chunks = chunker.chunk(_doc(text), DATA_ROOT)
+
+    for chunk in chunks:
+        sliced = text[chunk.metadata["start_char"] : chunk.metadata["end_char"]]
+        # Byte-for-byte equality is impossible by construction here: the slice
+        # keeps the source's "\n\n" while the chunk text has a single space.
+        # Matching on words proves the span points at the right REGION.
+        assert sliced.split() == chunk.text.split()
+
+
+def test_offsets_cover_the_original_whitespace(chunker):
+    text = "Alpha topic sentence one.\n\nBeta topic sentence two, quite different now."
+    chunk = chunker.chunk(_doc(text), DATA_ROOT)[0]
+    sliced = text[chunk.metadata["start_char"] : chunk.metadata["end_char"]]
+    assert "\n\n" in sliced
+    assert "\n\n" not in chunk.text
+
+
+def test_offsets_never_run_backwards(chunker):
+    text = "Alpha one.\n\nAlpha two.\n\nBeta one.\n\nBeta two.\n\nGamma one.\n\nGamma two."
+    chunks = chunker.chunk(_doc(text), DATA_ROOT)
+    for previous, current in zip(chunks, chunks[1:]):
+        assert current.metadata["start_char"] >= previous.metadata["end_char"]
+
+
+def test_offsets_are_whitespace_accurate_on_a_real_corpus_file(chunker):
+    document = load_document(DATA_ROOT / "company" / "about.md", DATA_ROOT)
+    chunks = chunker.chunk(document, DATA_ROOT)
+    for chunk in chunks:
+        sliced = document.text[chunk.metadata["start_char"] : chunk.metadata["end_char"]]
+        assert sliced.split() == chunk.text.split()

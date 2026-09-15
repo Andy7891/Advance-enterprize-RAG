@@ -14,10 +14,12 @@ was chosen over recursive character splitting.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
+from langchain_core.documents import Document
 from langchain_experimental.text_splitter import SemanticChunker
 
 from src.ingestion.loader import LoadedDocument
@@ -116,14 +118,7 @@ class Chunker:
 
         # Offsets are recovered before merging, because merging changes
         # indices but must preserve each surviving chunk's ORIGINAL span.
-        spans = [
-            (
-                doc.page_content,
-                doc.metadata.get("start_index", 0),
-                doc.metadata.get("start_index", 0) + len(doc.page_content),
-            )
-            for doc in lc_documents
-        ]
+        spans = self._recover_spans(lc_documents, document.text, document.source_path)
 
         spans = self._merge_undersized(spans)
         self._warn_oversized(spans, document.source_path)
@@ -143,6 +138,75 @@ class Chunker:
             # a contiguous 0..N-1 run with no gaps where a merge removed one.
             for index, (text, start, end) in enumerate(spans)
         ]
+
+    def _recover_spans(
+        self, lc_documents: list[Document], source_text: str, source_name: str
+    ) -> list[tuple[str, int, int]]:
+        """Locate each chunk's true character span in the original text.
+
+        SemanticChunker's own `start_index` metadata cannot be trusted past
+        the first chunk. It rebuilds each chunk by re-joining sentences with a
+        single " ", which is shorter than the source wherever sentences were
+        separated by a blank line or multiple spaces, and then advances its
+        internal position tracker by the REBUILT length — so every offset
+        after the first such mismatch drifts further from reality.
+
+        A plain `str.find` is not enough either: that same whitespace
+        normalisation means the rebuilt chunk often is not verbatim present in
+        the source at all. Matching on the chunk's words with `\\s+` between
+        them tolerates any whitespace difference, so the recovered span covers
+        the REAL source region — including the blank lines the rebuilt text
+        dropped. Consequence worth knowing: `source_text[start:end]` equals the
+        chunk only after whitespace normalisation, never byte-for-byte.
+        """
+        spans: list[tuple[str, int, int]] = []
+        search_from = 0
+
+        for doc in lc_documents:
+            text = doc.page_content
+            span = self._locate(source_text, text, search_from)
+
+            if span is None:
+                # Falling back keeps a whole ingestion run alive rather than
+                # failing it over one unlocatable chunk, but the offsets are
+                # then the untrustworthy estimates described above — so this
+                # is logged loudly rather than passing silently.
+                logger.warning(
+                    "Could not locate chunk verbatim in %s; falling back to "
+                    "SemanticChunker's start_index estimate (offsets may be wrong)",
+                    source_name,
+                )
+                start = doc.metadata.get("start_index", 0)
+                end = start + len(text)
+            else:
+                start, end = span
+                # Advancing past this chunk stops a later, identical chunk from
+                # matching an earlier position and reporting a span that runs
+                # backwards relative to its predecessor.
+                search_from = end
+
+            spans.append((text, start, end))
+
+        return spans
+
+    @staticmethod
+    def _locate(source_text: str, chunk_text: str, search_from: int) -> tuple[int, int] | None:
+        """Find chunk_text in source_text, tolerating whitespace differences."""
+        # The exact match is tried first purely because it is far cheaper than
+        # building and running a regex, and it succeeds for any chunk whose
+        # internal whitespace the splitter happened not to alter.
+        exact = source_text.find(chunk_text, search_from)
+        if exact != -1:
+            return exact, exact + len(chunk_text)
+
+        words = [re.escape(word) for word in chunk_text.split()]
+        if not words:
+            return None
+
+        match = re.compile(r"\s+".join(words)).search(source_text, search_from)
+        if match is None:
+            return None
+        return match.start(), match.end()
 
     def _merge_undersized(self, spans: list[tuple[str, int, int]]) -> list[tuple[str, int, int]]:
         """Fold too-small chunks backwards into their predecessor."""
