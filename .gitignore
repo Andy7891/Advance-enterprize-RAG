@@ -35,6 +35,11 @@ htmlcov/
 # (see EXCLUDED_DIR_NAMES in src/ingestion/schemas.py).
 .ipynb_checkpoints/
 
+# --- Generated ingestion artifacts ----------------------------------------
+# Chunks are reproducible from data/ + the pipeline, so committing them would
+# bloat the repo and produce an unreadable diff on every parameter experiment.
+data/chunks/
+
 # --- Local models / large binaries ----------------------------------------
 models/
 *.gguf

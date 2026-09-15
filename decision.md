@@ -74,3 +74,31 @@ Fail loudly at construction time, plus pre-warm the cache in the Docker build | 
 
 **D-2026-09-15-20 — injectable TokenCounter**
 `TokenCounter` Protocol with a fake in tests | Calling tiktoken directly inside the enrichment function | Keeps the test suite offline and instant; without it, "fail loudly" would make CI on a fresh GitHub runner depend on a network fetch, since the runner is not the Docker image the cache was baked into | Flip never; same dependency-inversion reasoning as `Embedder` in chunker.py.
+
+---
+
+## Phase 2, Microstep 4 — Ingestion Pipeline Script (2026-09-15)
+
+**D-2026-09-15-21 — data layout**
+Keep `data/<category>/` and point the pipeline at `data/` | Restructuring everything under `data/raw/` as the spec assumed | Zero file moves, no test churn, and it avoids a verified trap: files under `data/raw/` with `data_root=data/` make `infer_category` return `"raw"` for every single chunk, silently destroying the category dimension hybrid search filters on | Flip if a second processing stage genuinely needs its own sibling directory (`data/processed/`), at which point `data_root` must move to `data/raw/` in the same change.
+
+**D-2026-09-15-22 — pipeline includes enrichment**
+loader → chunker → **enrichment** | The spec's literal loader → chunker only | Without enrichment the saved chunks carry the char÷4 estimate, which would make the spec's own "token distribution" report describe numbers already measured as ~27% wrong | Flip only if enrichment becomes slow enough to want a separate opt-in pass.
+
+**D-2026-09-15-23 — output format**
+One JSON file per source document, named `company__about.md.json` | A single combined `chunks.json`; JSONL | One document's chunks can be inspected or regenerated in isolation, and a partial failure damages exactly one file | Flip to JSONL when the corpus outgrows comfortable per-file inspection or a streaming loader is needed.
+
+**D-2026-09-15-24 — generated chunks are gitignored**
+`data/chunks/` in `.gitignore` | Committing chunks so a fresh clone has them | Chunks are reproducible from `data/` + code; committing them adds an unreadable diff to every parameter experiment | Flip if a reviewer must see output without running Ollama, at which point commit a small curated sample rather than the whole set.
+
+**D-2026-09-15-25 — re-run policy**
+Always re-chunk every document, overwriting | Skip if output exists; skip if source older than output | Skipping is silently wrong the moment chunking parameters change — untouched files keep boundaries from the OLD config, mixing two strategies in one dataset with no marker saying which is which | Flip to timestamp+config-hash staleness checking when a full run (~4 min at 76 docs) becomes too slow to tolerate.
+
+**D-2026-09-15-26 — failure policy**
+Skip the failing document, record it in the report, continue | Abort the whole run; skip but exit non-zero | One unreadable file should not discard the embedding work already done for everything before it | **Flip condition is close:** the resulting dataset LOOKS complete, so if anything ever consumes `data/chunks/` without reading `documents_failed`, switch to exiting non-zero.
+
+**D-2026-09-15-27 — quantile method for the token distribution**
+`statistics.quantiles(..., method="inclusive")` | The default `method="exclusive"` | Exclusive extrapolates beyond the observed data: for two chunks of 6 and 10 tokens it reports p25=5 and p75=11, values impossible for that dataset. Inclusive describes the chunks that actually exist, which is what a report about them should do | Flip to exclusive only if the report is ever reinterpreted as estimating a wider population the corpus was sampled from.
+
+**D-2026-09-15-28 — interface**
+Importable `run_pipeline()` plus a `python -m` CLI | Either alone | The function is testable without subprocesses; the `__main__` block gives a real command for the README | Flip never; the cost is a dozen lines of argparse.
