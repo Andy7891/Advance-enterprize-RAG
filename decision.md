@@ -55,3 +55,22 @@ Whitespace-tolerant regex search (`\s+` between the chunk's words) | (a) trustin
 
 **D-2026-09-15-15 — the correctness criterion for offsets**
 Assert `source[start:end].split() == chunk.text.split()` | Assert byte-for-byte `source[start:end] == chunk.text` | Byte equality is impossible by construction: the slice retains the source's blank lines while the chunk text has single spaces. Word-level equality proves the span points at the right REGION, which is what a UI highlight actually needs | Flip to byte equality only if chunk text is ever reconstructed from the source slice itself rather than from re-joined sentences.
+
+---
+
+## Phase 2, Microstep 3 — Token Counting & Metadata Enrichment (2026-09-15)
+
+**D-2026-09-15-16 — which tokenizer**
+`tiktoken` `cl100k_base` | `nomic-embed-text`'s own tokenizer via Ollama; keeping the char÷4 heuristic | Industry-standard, well-documented, works without a model server, and gives a consistent ruler for comparing chunk sizes. **Known mismatch, accepted deliberately:** we embed with `nomic-embed-text`, which tokenizes differently — so these counts do NOT predict what the embedding model actually sees | Flip to the embedding model's own tokenizer the moment token counts are used to enforce a real context-window limit rather than to compare chunks to each other.
+
+**D-2026-09-15-17 — behaviour when the encoding can't be fetched**
+Fail loudly at construction time, plus pre-warm the cache in the Docker build | Silent fallback to the char÷4 heuristic; vendoring the `.tiktoken` file into the repo | A silent fallback would make `tokens_approx` mean two different things depending on network conditions, which is painful to debug; baking the cache into the image at build time means the container never needs network at runtime | Flip to vendoring the encoding file if builds must run air-gapped, where even build-time network is unavailable.
+
+**D-2026-09-15-18 — both counts hold the same number**
+`approx_token_count` AND `metadata["tokens_approx"]` both carry the tiktoken count | Field keeps char÷4 while metadata gets tiktoken; renaming the field | Two numbers that disagree would force every reader to know which to trust; measured on real corpus text the gap is real (heuristic 100 vs tiktoken 79, ~27% overestimate) | Flip to renaming `approx_token_count` if its now-inaccurate name ("approx" holding an exact value) starts causing confusion in code review.
+
+**D-2026-09-15-19 — pure enrichment, not in-place mutation**
+`enrich_with_token_counts` returns NEW chunks via `dataclasses.replace` and a fresh metadata dict | Mutating `chunk.metadata` in place | `DocumentChunk` is frozen specifically to prevent post-construction edits; mutating its dict works only by exploiting a gap in that guarantee, and would make enrichment invisible action-at-a-distance | Flip only if profiling shows the extra allocation matters at corpus sizes far beyond today's 76 documents.
+
+**D-2026-09-15-20 — injectable TokenCounter**
+`TokenCounter` Protocol with a fake in tests | Calling tiktoken directly inside the enrichment function | Keeps the test suite offline and instant; without it, "fail loudly" would make CI on a fresh GitHub runner depend on a network fetch, since the runner is not the Docker image the cache was baked into | Flip never; same dependency-inversion reasoning as `Embedder` in chunker.py.

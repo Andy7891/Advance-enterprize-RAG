@@ -42,6 +42,10 @@ dependencies = [
   "requests==2.34.2",
   # Document ingestion (PDF text extraction)
   "pypdf==6.16.1",
+  # Token counting. Pinned explicitly: it was previously present only as a
+  # transitive dep of langchain-openai, so any LangChain change could have
+  # removed it silently from under us.
+  "tiktoken==0.14.0",
 ]
 
 [project.optional-dependencies]
@@ -61,6 +65,13 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src", "src.*"]
+
+# Registering markers explicitly turns a typo'd marker into an error rather
+# than a silently-ignored test selector.
+[tool.pytest.ini_options]
+markers = [
+  "tiktoken: needs tiktoken's encoding file (network on a cold cache); deselect with -m 'not tiktoken'",
+]
 
 # Ruff replaces both black (formatting) and flake8 (linting) in one tool.
 # TODO(learning): read https://docs.astral.sh/ruff/rules/ and decide which
