@@ -30,6 +30,9 @@ def cli_run(monkeypatch, fixture_corpus, tmp_path):
     # the lambdas accept and ignore whatever arguments main() passes them.
     monkeypatch.setattr(pipeline, "build_ollama_embedder", lambda *a, **k: FakeEmbedder())
     monkeypatch.setattr(pipeline, "build_tiktoken_counter", lambda *a, **k: FakeCounter())
+    # main() verifies the pinned model against a live Ollama before chunking;
+    # that check has its own tests in tests/embedding/.
+    monkeypatch.setattr(pipeline, "verify_model", lambda *a, **k: "fake-digest")
 
     def run(*extra_args: str) -> dict:
         argv = [

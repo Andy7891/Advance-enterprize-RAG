@@ -22,6 +22,7 @@ from typing import Literal, Protocol
 from langchain_core.documents import Document
 from langchain_experimental.text_splitter import SemanticChunker
 
+from src.core.config import settings
 from src.ingestion.loader import LoadedDocument
 from src.ingestion.schemas import DocumentChunk, make_chunk
 
@@ -85,6 +86,13 @@ class ChunkerConfig:
     smooths out single odd sentences at the cost of blurring genuine sharp
     topic changes."""
 
+    max_chunk_tokens: int = 1500
+    """A HARD cap, unlike target_chunk_chars. Semantic boundaries follow
+    meaning and can produce a chunk larger than the embedding model accepts --
+    measured: a 13,599-char chunk was rejected by nomic-embed-text's 2048-token
+    context. Anything over this is re-split at sentence boundaries. Counted with
+    the char/4 estimate, which overestimates, so the real margin is wider."""
+
 
 class Chunker:
     """Turns one LoadedDocument into an ordered list of DocumentChunks."""
@@ -121,6 +129,9 @@ class Chunker:
         spans = self._recover_spans(lc_documents, document.text, document.source_path)
 
         spans = self._merge_undersized(spans)
+        # The cap runs AFTER merging, so a merge can never push a chunk back over
+        # the model's limit -- the guarantee has to be the final step to hold.
+        spans = self._split_oversized(spans, document.text, document.source_path)
         self._warn_oversized(spans, document.source_path)
 
         source_path = (data_root / document.source_path).resolve()
@@ -208,6 +219,78 @@ class Chunker:
             return None
         return match.start(), match.end()
 
+    def _split_oversized(
+        self, spans: list[tuple[str, int, int]], source_text: str, source_name: str
+    ) -> list[tuple[str, int, int]]:
+        """Re-split any span exceeding max_chunk_tokens, keeping offsets exact."""
+        limit_chars = self._config.max_chunk_tokens * 4
+        result: list[tuple[str, int, int]] = []
+
+        for text, start, end in spans:
+            if len(text) <= limit_chars:
+                result.append((text, start, end))
+                continue
+
+            logger.warning(
+                "Chunk in %s is %d chars (> %d); splitting to fit the embedding model",
+                source_name,
+                len(text),
+                limit_chars,
+            )
+            search_from = start
+            for piece in self._pack(text, limit_chars):
+                # Located within the original span so each piece's offsets point
+                # at its own region, not at an identical sentence elsewhere.
+                span = self._locate(source_text, piece, search_from)
+                piece_start, piece_end = span if span else (search_from, search_from + len(piece))
+                result.append((piece, piece_start, piece_end))
+                search_from = piece_end
+
+        return result
+
+    @staticmethod
+    def _pack(text: str, limit_chars: int) -> list[str]:
+        """Greedily pack sentences into pieces no longer than limit_chars."""
+        # Same boundary rule as SemanticChunker, so a forced split still lands
+        # between sentences wherever the text allows it.
+        sentences = [s for s in re.split(r"(?<=[.?!])\s+", text) if s]
+        units: list[str] = []
+        for sentence in sentences:
+            if len(sentence) <= limit_chars:
+                units.append(sentence)
+                continue
+            # A single sentence longer than the cap (a table, a run-on clause)
+            # has no sentence boundary to use, so words are the last resort.
+            units.extend(Chunker._pack_words(sentence, limit_chars))
+
+        pieces: list[str] = []
+        current = ""
+        for unit in units:
+            candidate = f"{current} {unit}" if current else unit
+            if len(candidate) <= limit_chars:
+                current = candidate
+            else:
+                pieces.append(current)
+                current = unit
+        if current:
+            pieces.append(current)
+        return pieces
+
+    @staticmethod
+    def _pack_words(sentence: str, limit_chars: int) -> list[str]:
+        pieces: list[str] = []
+        current = ""
+        for word in sentence.split():
+            candidate = f"{current} {word}" if current else word
+            if len(candidate) <= limit_chars or not current:
+                current = candidate
+            else:
+                pieces.append(current)
+                current = word
+        if current:
+            pieces.append(current)
+        return pieces
+
     def _merge_undersized(self, spans: list[tuple[str, int, int]]) -> list[tuple[str, int, int]]:
         """Fold too-small chunks backwards into their predecessor."""
         merged: list[tuple[str, int, int]] = []
@@ -247,7 +330,7 @@ class Chunker:
         return chunks
 
 
-def build_ollama_embedder(base_url: str, model: str = "nomic-embed-text") -> Embedder:
+def build_ollama_embedder(base_url: str, model: str = settings.embed_model) -> Embedder:
     """Construct the production embedder.
 
     Isolated in a factory so importing this module never opens a network

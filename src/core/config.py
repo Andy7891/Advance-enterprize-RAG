@@ -16,5 +16,35 @@ class Settings(BaseSettings):
 
     cohere_api_key: str = ""
 
+    # --- Embedding model lock (P3-M2, see docs/architecture.md) ---------------
+    # Every value below is coupled to vectors already stored in Qdrant. Changing
+    # any of them without dropping the collection and re-embedding leaves old
+    # document vectors and new query vectors in different spaces — searches keep
+    # returning results, they are just silently wrong.
+
+    embed_model: str = "nomic-embed-text"
+
+    # A model NAME is not a version: `ollama pull` can replace the weights behind
+    # the same tag. The digest is what actually identifies the weights, and it is
+    # checked at startup by src/embedding/lock.py.
+    embed_model_digest: str = "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"
+
+    # Measured from the running model, not taken from documentation.
+    embed_dim: int = 768
+    embed_context_tokens: int = 2048
+
+    # Deliberately well under the context limit, because it is counted with the
+    # char/4 estimate rather than nomic's own tokenizer. Measured: a chunk of
+    # 2,788 tiktoken tokens was rejected, 2,119 was accepted.
+    embed_max_chunk_tokens: int = 1500
+
+    # nomic-embed-text is trained with asymmetric task prefixes. Stored document
+    # vectors include the document prefix, so changing either value means
+    # re-embedding the whole collection, not just reconfiguring.
+    embed_query_prefix: str = "search_query: "
+    embed_document_prefix: str = "search_document: "
+
+    qdrant_collection: str = "chunks"
+
 
 settings = Settings()

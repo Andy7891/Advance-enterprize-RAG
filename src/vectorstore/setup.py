@@ -14,11 +14,14 @@ import argparse
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 
-COLLECTION_NAME = "chunks"
+from src.core.config import settings
+from src.embedding.lock import verify_model
 
-# nomic-embed-text's output size, measured directly against the running model
-# rather than taken from documentation (decision D-2026-09-16-13).
-VECTOR_SIZE = 768
+COLLECTION_NAME = settings.qdrant_collection
+
+# Read from the model lock rather than typed here, so the collection size can
+# never drift from the model that fills it (decision D-2026-09-16-20).
+VECTOR_SIZE = settings.embed_dim
 
 # Cosine because nomic-embed-text is trained for it and the chunker already
 # measures sentence similarity the same way; dot product would only be
@@ -76,7 +79,12 @@ def main() -> None:
     """CLI entry point: python -m src.vectorstore.setup"""
     parser = argparse.ArgumentParser(description="Create/verify the Qdrant chunks collection.")
     parser.add_argument("--url", default="http://localhost:6333")
+    parser.add_argument("--ollama-url", default="http://localhost:11434")
     args = parser.parse_args()
+
+    # A correctly-sized collection is only half the contract; the model that will
+    # fill it must be the pinned one too, or the size check proves nothing.
+    verify_model(args.ollama_url)
 
     client = QdrantClient(url=args.url)
     # get_collections doubles as a connectivity check, so an unreachable Qdrant

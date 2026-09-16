@@ -17,6 +17,8 @@ import logging
 import statistics
 from pathlib import Path
 
+from src.core.config import settings
+from src.embedding.lock import verify_model
 from src.ingestion.chunker import Chunker, ChunkerConfig, Embedder, build_ollama_embedder
 from src.ingestion.enrichment import (
     TokenCounter,
@@ -227,7 +229,7 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--ollama-url", default="http://localhost:11434")
-    parser.add_argument("--embed-model", default="nomic-embed-text")
+    parser.add_argument("--embed-model", default=settings.embed_model)
     parser.add_argument(
         "--threshold",
         type=float,
@@ -238,6 +240,10 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
+    # Checked before any chunking: the chunker embeds sentences with this model,
+    # so a silently swapped model would change chunk boundaries for the whole run.
+    verify_model(args.ollama_url, model=args.embed_model)
+
     # Both dependencies are constructed here, at the outermost layer, and passed
     # down — so run_pipeline itself never reaches out to a network or a model
     # server, and a test can drive the entire pipeline with fakes.
@@ -246,7 +252,10 @@ def main() -> None:
         output_dir=args.output_dir,
         embedder=build_ollama_embedder(args.ollama_url, args.embed_model),
         counter=build_tiktoken_counter(),
-        config=ChunkerConfig(breakpoint_threshold_amount=args.threshold),
+        config=ChunkerConfig(
+            breakpoint_threshold_amount=args.threshold,
+            max_chunk_tokens=settings.embed_max_chunk_tokens,
+        ),
     )
 
     print(format_report(report))

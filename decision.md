@@ -168,3 +168,19 @@ Idempotent `ensure_collection()` that creates if missing and **raises** on confi
 
 **D-2026-09-16-18 — chunk sizing deferred, with a gate**
 Proceed with M1; re-tune chunking before M3 embeds anything | Fix first; accept current chunks | M1 is independent of chunk quality, but embedding bakes 69%-oversized boundaries into the index | A recorded promise, not an enforced check — must happen before P3-M3.
+
+---
+
+## Phase 3, Microstep 2 — Choose & Lock Embedding Model (2026-09-16)
+
+**D-2026-09-16-19 — hard token cap in the chunker**
+Re-split any chunk over `max_chunk_tokens` (1500, counted as chars/4 = 6000 chars) at sentence boundaries, words as a last resort, applied after merging | Re-tuning the breakpoint threshold only; truncating at embed time | Embedding every chunk showed 1/214 rejected ("input length exceeds the context length", 13,599 chars). Tuning guarantees nothing for future documents; truncation silently loses the tail. Verified after the fix: 0/223 rejected, largest 5,983 chars | Flip to counting with the embedding model's own tokenizer if a text type (code, tables) turns out to tokenize far denser than chars/4 assumes.
+
+**D-2026-09-16-20 — single source of truth for the model**
+Extend `Settings` in `src/core/config.py` (model, digest, dim, context, cap, prefixes, collection) and have chunker, pipeline and Qdrant setup read it | Creating `src/config.py` as the spec named; moving the existing module | The model name was hardcoded in three unconnected places (`chunker.py`, `pipeline.py`, `setup.py`'s `VECTOR_SIZE`); two config modules would recreate that problem | Flip never; deviating from the spec's filename is cheaper than a second config module.
+
+**D-2026-09-16-21 — pin by digest and verify at startup**
+Store the model digest and refuse to run if Ollama serves a different one (pipeline and Qdrant setup) | Model name only; digest recorded in docs without a check | `nomic-embed-text:latest` is a moving tag — a re-pull can swap the weights, and old document vectors silently stop matching new query vectors with no error | Flip to name-only only if the model is ever served from an immutable source that guarantees versioned weights.
+
+**D-2026-09-16-22 — task prefixes on by default, configurable**
+`search_query: ` / `search_document: ` per the nomic model card, held in config | Always on hardcoded; off | Following the model's training is the defensible default. A 2-query spot check showed prefixes narrowed the relevant/irrelevant gap (0.169 → 0.124, 0.107 → 0.083) — too small a sample to overrule the model card, but enough to demand a real evaluation | Flip to off if a proper retrieval evaluation shows better separation without prefixes — and budget a full re-embed, because the document prefix is in every stored vector.

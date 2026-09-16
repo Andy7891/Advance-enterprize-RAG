@@ -53,7 +53,8 @@ The authoritative definition is the `DocumentChunk` dataclass in
 ### Verified invariants
 
 Asserted by `tests/ingestion/test_chunk_contract.py` against real pipeline output —
-**214 chunks across 76 documents, all passing** as of sign-off:
+**223 chunks across 76 documents, all passing** (re-verified after the P3-M2 hard token cap;
+214 at original sign-off):
 
 - `char_count == len(text)`
 - `approx_token_count == metadata["tokens_approx"]`
@@ -72,11 +73,15 @@ lines, so word-level equality is the correct criterion (see
 ### Scope of this sign-off
 
 This certifies the **format and internal consistency** of the chunk data. It does **not**
-certify chunk *quality*. A known open issue at sign-off time: with the current
-`ChunkerConfig` defaults, **149 of 214 chunks (69%) exceed the 500-character target** and the
-largest is **13,599 characters**. Those chunks are schema-valid and semantically consistent —
-they are simply larger than intended. See
-[notes/step-2.4-ingestion-pipeline.md](notes/step-2.4-ingestion-pipeline.md).
+certify chunk *quality*.
+
+- **Fixed in P3-M2:** the largest original chunk (13,599 chars) was rejected by the embedding
+  model's 2048-token context. A hard cap now re-splits anything over 6,000 characters; the
+  largest chunk is **5,983 chars** and **all 223 chunks embed successfully** against the
+  pinned model (see [docs/architecture.md](docs/architecture.md)).
+- **Still open:** **156 of 223 chunks (69%) exceed the 500-character soft target.** The cap
+  prevents failures; it does not make chunks well-sized. See
+  [notes/step-2.4-ingestion-pipeline.md](notes/step-2.4-ingestion-pipeline.md).
 
 ## Reproducing the checks
 
