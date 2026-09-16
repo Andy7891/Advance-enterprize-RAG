@@ -124,3 +124,25 @@ Report coverage on every run, do not enforce a threshold; pin `pytest-cov==7.1.0
 
 **D-2026-09-16-06 — CI runs the offline test subset**
 `pytest -m "not tiktoken"` in CI | Running the full suite including the tiktoken test | A fresh GitHub runner has no tiktoken cache, so that one test would need a network fetch; the Docker cache warmed in P2-M3 protects the container, not the runner | Flip if the CI workflow gains a cache step for tiktoken's encoding directory.
+
+---
+
+## Phase 2, Microstep 6 — Integration Checkpoint: Verify Chunk Schema (2026-09-16)
+
+**D-2026-09-16-07 — verification form**
+Permanent contract tests in `tests/ingestion/test_chunk_contract.py` | Manually inspecting 1-2 files as the spec says; a standalone on-demand script | A manual check proves nothing about the other 74 documents and nothing about tomorrow; a script nobody is obliged to run rots the same way. Tests re-verify on every run | Flip to a script if the contract ever needs to run against output too large to load into a test process.
+
+**D-2026-09-16-08 — structural AND semantic checking**
+Assert both key/type structure and cross-field invariants | Structural validation only (what JSON Schema covers) | A chunk can be perfectly well-formed and still claim `char_count: 500` for a 12-character string. No schema language catches that; only an invariant comparing fields to each other does | Flip never; dropping the semantic layer removes the only check on the values actually agreeing.
+
+**D-2026-09-16-09 — behaviour when chunk data is absent**
+`pytest.skip` with an explicit reason naming the command to run | Failing; generating chunks inside the test fixture | `data/chunks/` is gitignored generated output, so a fresh clone and every CI run legitimately has none — failing would make a clean checkout look broken. Generating them inside a test would need a live Ollama and take ~9 minutes | **Known cost, accepted:** these tests therefore always skip in CI, and a skip reads as green. Flip if chunk output is ever committed or produced by a CI job.
+
+**D-2026-09-16-10 — schema documented as a prose table**
+Prose table in README, `DocumentChunk` remains the authoritative definition | A generated or hand-written JSON Schema file | A hand-written JSON Schema is a second definition to keep in sync; generating one needs a generator dependency for a 10-field structure. A table is what a human reviewer actually reads | Flip to a real JSON Schema the moment a non-Python consumer needs to validate this data.
+
+**D-2026-09-16-11 — a test guards the prose table**
+`test_readme_schema_table_lists_exactly_the_dataclass_fields` parses the README and compares against `dataclasses.fields` | Trusting the table to be updated by hand | Documentation nothing enforces becomes a lie, and a wrong schema table is worse than none because a reader trusts it. Verified: introducing `char_kount` in the table fails the test with a message naming both sides | Flip never; the guard costs one test and catches a whole class of silent doc rot.
+
+**D-2026-09-16-12 — scope of the sign-off**
+Sign off on format and internal consistency only, with the chunk-quality issue stated explicitly in the README | Signing off without qualification | 69% of chunks exceed the target size and the largest is 13,599 characters; those chunks are schema-valid but not well-sized. An unqualified "signed off" would later read as "this dataset was approved" | Flip to an unqualified sign-off once chunk sizing is tuned and re-verified.
