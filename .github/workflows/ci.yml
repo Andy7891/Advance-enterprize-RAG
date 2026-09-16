@@ -59,9 +59,14 @@ jobs:
           pip install -e ".[dev]"
 
       # -v so a failure in the Actions log names the exact failing test, not just a dot.
+      # --cov reports which lines ran, which is how a test that passes without
+      # exercising the code it claims to test gets caught (see P2-M5). Reported,
+      # not enforced: a threshold tempts writing filler tests to hit a number.
+      # -m "not tiktoken" keeps the run offline; that one test needs an encoding
+      # file a fresh runner would have to fetch over the network.
       - name: Run pytest
         run: |
-          pytest tests/ -v
+          pytest tests/ -v -m "not tiktoken" --cov=src --cov-report=term-missing
 
   build:
     runs-on: windows-latest

@@ -57,6 +57,9 @@ dev = [
   "mypy==1.19.0",
   "docker==7.2.0",
   "ipykernel==7.3.0",
+  # Pinned rather than left as an ad-hoc install: an unpinned tool that CI
+  # depends on is the same trap tiktoken was in before P2-M3.
+  "pytest-cov==7.1.0",
 ]
 
 [project.urls]

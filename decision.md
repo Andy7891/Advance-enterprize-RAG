@@ -102,3 +102,25 @@ Skip the failing document, record it in the report, continue | Abort the whole r
 
 **D-2026-09-15-28 — interface**
 Importable `run_pipeline()` plus a `python -m` CLI | Either alone | The function is testable without subprocesses; the `__main__` block gives a real command for the README | Flip never; the cost is a dozen lines of argparse.
+
+---
+
+## Phase 2, Microstep 5 — Unit Tests for Ingestion (2026-09-16)
+
+**D-2026-09-16-01 — test file layout**
+Keep per-module files in `tests/ingestion/`, add tests only for verified-uncovered paths | Writing `tests/test_ingestion.py` from scratch as the spec says; consolidating all 66 existing tests into one file | 66 tests already covered loader/chunker/schemas at 93% coverage — a new monolithic file would have duplicated them, and consolidating would produce a ~700-line file where you can no longer run one module's tests alone | Flip if the per-module files ever grow so numerous that finding the right one costs more than scrolling one big file.
+
+**D-2026-09-16-02 — what "done" means for a test step**
+Measure coverage first, then write tests only for lines proven unexecuted | Writing more tests by intuition about what "feels" untested | Coverage found that `test_undersized_chunks_are_merged_backwards` passed while the merge body never ran — the splitter returned one chunk, so the assertion held for an unrelated reason. Intuition would never have found that | Flip never; measuring before writing is strictly better than guessing.
+
+**D-2026-09-16-03 — fixing the vacuous merge test**
+Unit-test `_merge_undersized` directly with crafted spans | Crafting splitter input that yields several chunks; doing both | Calling the method directly GUARANTEES the branch executes, with no dependence on FakeEmbedder's behaviour or threshold tuning — which is exactly what silently failed before | Flip to an end-to-end test if `_merge_undersized` is ever made public, since testing through the public path would then cost nothing.
+
+**D-2026-09-16-04 — test data sources**
+Committed `tests/fixtures/corpus/` for most tests, real `data/` kept for canary tests | Real corpus everywhere; `tmp_path` everywhere | Controlled fixtures stop a document edit from breaking unrelated tests (the 82-vs-76 incident), while a few real-corpus tests remain because a fixture can only contain problems we already thought of — the real corpus is what surfaced `.ipynb_checkpoints` | Flip to fixtures-only if real-corpus tests start failing for data reasons more often than they catch genuine problems.
+
+**D-2026-09-16-05 — coverage in CI**
+Report coverage on every run, do not enforce a threshold; pin `pytest-cov==7.1.0` | Enforcing `--cov-fail-under=90`; not adding coverage at all | The number stays visible so a regression is noticeable, without a threshold that tempts writing filler tests purely to clear a bar. Pinning avoids repeating the transitive-dependency trap from P2-M3 | Flip to enforcement if coverage silently drifts down over several commits without anyone reacting.
+
+**D-2026-09-16-06 — CI runs the offline test subset**
+`pytest -m "not tiktoken"` in CI | Running the full suite including the tiktoken test | A fresh GitHub runner has no tiktoken cache, so that one test would need a network fetch; the Docker cache warmed in P2-M3 protects the container, not the runner | Flip if the CI workflow gains a cache step for tiktoken's encoding directory.
