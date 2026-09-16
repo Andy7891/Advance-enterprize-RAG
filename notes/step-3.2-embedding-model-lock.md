@@ -48,7 +48,7 @@ contract tests         : pass on the new dataset
 5. A deliberate model upgrade fails until the pinned digest is updated by hand.
 
 ## Key concepts
-- **Context window** — the maximum input a model accepts; exceeding it is rejected, not truncated, by Ollama here.
+- **Context window** — the maximum input a model accepts; Ollama 0.20.0 `/api/embed` defaults to `truncate: true` and may silently cut input to 2048 tokens; some inputs are rejected anyway. Send `truncate: false` to guarantee a loud failure (verified in docs/12).
 - **Model pinning** — identifying weights by digest rather than a mutable name/tag.
 - **Asymmetric embedding / task prefixes** — different instructions for queries and documents.
 - **Single source of truth** — one config object every dependent module reads from.
