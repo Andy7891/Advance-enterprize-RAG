@@ -77,9 +77,11 @@ and the model mixes all rows together to produce one 768-number vector for the w
 input.
 
 The **context window** is the maximum number of tokens that mixing step can take:
-**2048** for nomic-embed-text. The limit is fixed when the model is built. The model has
-learned *position information* for positions 0–2047 only, so it has literally no way to
-represent token 2049.
+**2048** for nomic-embed-text as Ollama serves it. The limit comes from how the model was
+trained and configured: it learned to handle word *positions* up to a certain length.
+Ollama allocates room for exactly that many tokens and won't process more. (The model card
+notes the architecture can be stretched to 8192 with extra configuration, but that isn't
+what we run, and we don't rely on it.)
 
 *Three facts that follow from this:*
 1. **The limit is in tokens, not characters or words.** `"hello"` is 5 characters but 3
@@ -153,7 +155,7 @@ step3 cosine(2500 words, 5000 words) = 1.0
 step4 truncate=False -> 400 {"error":"the input length exceeds the context length"}
 ```
 *How to read it:*
-- **Step 1:** `hello` → 3 tokens proves the two hidden markers `[CLS]`/`[SEP]` are
+- **Step 1:** `hello` → 3 tokens: one word plus the two hidden start/end markers, which are
   counted. 47 chars → 11 tokens is about 4.3 chars/token, which is where our "chars / 4"
   estimate comes from.
 - **Step 2:** both inputs stop at **exactly 2048**, the context window. Everything past
