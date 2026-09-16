@@ -146,3 +146,25 @@ Prose table in README, `DocumentChunk` remains the authoritative definition | A 
 
 **D-2026-09-16-12 — scope of the sign-off**
 Sign off on format and internal consistency only, with the chunk-quality issue stated explicitly in the README | Signing off without qualification | 69% of chunks exceed the target size and the largest is 13,599 characters; those chunks are schema-valid but not well-sized. An unqualified "signed off" would later read as "this dataset was approved" | Flip to an unqualified sign-off once chunk sizing is tuned and re-verified.
+
+---
+
+## Phase 3, Microstep 1 — Qdrant Vector Database Setup (2026-09-16)
+
+**D-2026-09-16-13 — embedding model and vector size**
+`nomic-embed-text`, **768** dims | all-MiniLM-L6-v2 (384); OpenAI text-embedding-3-small (1536) — the spec's two options | Already running in Ollama and already used for semantic chunking, so one model defines both chunk boundaries and retrieval similarity. 768 was measured against the running model; neither spec option matched it | Flip only with a full drop-and-re-embed: vector size is fixed at collection creation and vectors cannot move between models.
+
+**D-2026-09-16-14 — create the collection in M1, not M2**
+Choose the model now and create `chunks` immediately | The spec's order (create in M1, pick model in M2) | Collection size is immutable, so creating it before choosing the model means guessing and later recreating | Flip never; the spec's ordering was a latent bug.
+
+**D-2026-09-16-15 — distance metric**
+Cosine | Dot product; Euclidean | nomic-embed-text is trained for cosine and the chunker already measures similarity this way; dot product matches cosine only for normalised vectors and silently misranks otherwise | Flip to dot product if a future model guarantees normalised output and latency becomes a bottleneck.
+
+**D-2026-09-16-16 — how the collection is created**
+Idempotent `ensure_collection()` that creates if missing and **raises** on config mismatch | One-off curl in README; lazy auto-create at first upsert | Re-runnable and tested; a mismatch surfaces immediately rather than as an upsert failure after an expensive embedding run. No auto-repair, because recreating destroys stored vectors | Flip to auto-recreate only for a disposable dev collection.
+
+**D-2026-09-16-17 — offline tests via in-memory Qdrant**
+`QdrantClient(":memory:")` | Tests against the Docker Qdrant | Same client API and collection logic with no server, keeping CI offline | Flip to a real-server integration test if in-memory and server behaviour ever diverge.
+
+**D-2026-09-16-18 — chunk sizing deferred, with a gate**
+Proceed with M1; re-tune chunking before M3 embeds anything | Fix first; accept current chunks | M1 is independent of chunk quality, but embedding bakes 69%-oversized boundaries into the index | A recorded promise, not an enforced check — must happen before P3-M3.
