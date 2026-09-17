@@ -71,6 +71,11 @@ mutation tests          : 10 mutants (delete guard, random ids, provenance, comp
 5. The zstd decoding failure seen once has **no known root cause**; the gzip pin avoids the code
    path rather than fixing it.
 6. `index` re-embeds everything (~190 s) on every run.
+7. **Provenance guard gap (found in deep dive 14, verified on a scratch collection):** the check
+   compares against `settings`, which the Embedder also reads, so changing `EMBED_DOCUMENT_PREFIX`
+   (or the pinned digest together with the model) in the environment makes both sides agree and
+   `upsert` accepts vectors from a different space. Fix: also compare with provenance already stored
+   in the collection before writing (D-2026-09-17-20, option C).
 
 ## How this connects
 **Previous:** P3-M1 created the collection; P3-M2 pinned the model and prefixes; P3-M3 produced
