@@ -39,6 +39,8 @@ htmlcov/
 # Chunks are reproducible from data/ + the pipeline, so committing them would
 # bloat the repo and produce an unreadable diff on every parameter experiment.
 data/chunks/
+# Rewritten on every ingestion run (see src/vectorstore/ingest.py).
+data/ingestion_log.json
 
 # --- Local models / large binaries ----------------------------------------
 models/

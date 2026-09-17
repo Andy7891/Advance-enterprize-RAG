@@ -261,3 +261,43 @@ Per-document calls | Fixed batches across documents; one call with wait=False | 
 
 **D-2026-09-17-23 — Qdrant CLI clients accept only gzip responses**
 `build_qdrant_client` sends `Accept-Encoding: gzip` | Default httpx negotiation (gzip, deflate, zstd); pinning zstandard | One live index failed with "zstd decompressor error: Allocation error" on a delete response; not reproducible in 200 deletes, a 70s idle test, or a rerun — root cause unknown. zstandard is only a langsmith dependency. gzip removes the failing decoder and was verified to take effect | Flip back to default negotiation if the zstd failure is diagnosed and fixed upstream.
+
+---
+
+## Phase 3, Microstep 5 — Ingest All Chunks into Vector Store (2026-09-17)
+
+**D-2026-09-17-24 — the job lives in `src/vectorstore/ingest.py`**
+`run_ingestion(client, make_embedder, ...) -> IngestionReport` | Growing the `index` branch of `store.py`; a stage of the chunking pipeline | A job with stages, a report and a log is testable only as a function, not as CLI code; keeping it out of the chunking pipeline keeps re-chunking and re-indexing separately runnable | Flip to a pipeline stage once chunking parameters stabilise and one end-to-end command matters more than separate reruns.
+
+**D-2026-09-17-25 — full re-embed on every run**
+Embed all 223 chunks each run (~198 s live) | Incremental by stored content hash; incremental by file mtime | Always consistent with no extra state; change detection is where silent staleness comes from | Flip to hash-based incremental ingestion when a full run takes long enough that it is skipped in practice.
+
+**D-2026-09-17-26 — delete orphan documents, unless the chunking report shows failures**
+Remove stored documents absent from disk; keep them (with a warning) if `report.json` records `documents_failed > 0`; empty chunks dir aborts earlier | Report only; ignore | The index should match the source, but after a partly failed chunking run an absent document may only have failed to chunk. Verified live: removing one chunk file took a scratch collection from 7 to 4 points, verified | Flip to report-only if chunk files can go missing for reasons the chunking report does not capture (e.g. files deleted by hand after a failed run).
+
+**D-2026-09-17-27 — preflight refuses stored points from another vector space unless `--rebuild`**
+Filtered count of points whose digest or prefix differs from settings | Leaving the gap documented; a separate index manifest file | Closes the gap found in deep dive 14: a changed setting makes new embeddings and the upsert check agree while stored vectors are in another space. Verified live: `EMBED_DOCUMENT_PREFIX=""` aborted in 0.2 s with 223 incompatible points, collection untouched | Flip to a manifest only if the vector store can no longer be queried by payload. Note: direct `QdrantVectorStore.upsert` callers still bypass this check.
+
+**D-2026-09-17-28 — fail fast and log the failed stage**
+Stop at the first error; the log records status, stage, error and counts gathered so far; the error is re-raised | Skip failing documents and continue; blue/green build with alias switch | Simple and honest; reruns are idempotent. A failure during upsert can leave some documents new and some old until the next successful run | Flip to blue/green (alias switch) when the index serves live traffic that must never see a mixed state.
+
+**D-2026-09-17-29 — embed everything, then upsert**
+Embedding stage completes before any write | Per-document embed+upsert; groups of N | An embedding failure leaves the collection exactly as it was (tested); 223 vectors in memory is trivial | Flip to grouped embed+upsert when vectors for the whole corpus no longer fit comfortably in memory.
+
+**D-2026-09-17-30 — one JSON log, overwritten each run, gitignored**
+`data/ingestion_log.json` | JSON Lines history; both | Matches the spec and is easy to read for the latest run; added to `.gitignore` because it changes on every run | Flip to also appending JSONL history once runs need comparing over time (e.g. tracking embed duration growth).
+
+**D-2026-09-17-31 — log contains timings per stage, counts before/after, provenance, status, error**
+Full report dataclass serialised as JSON | Counts and total time only; per-document detail | Separates a slow embed (197.7 s) from a slow upsert (4.8 s) without rerunning; records which vector space the run wrote | Flip to per-document detail when individual documents need diagnosing.
+
+**D-2026-09-17-32 — verify exact chunk_id sets and zero incompatible points**
+Stored chunk_ids (minus deliberately kept orphans) must equal disk's; no point from another vector space may remain | Point count only; no verification | A count can hide one missing and one stale chunk; mutation-tested: disabling either half fails a test | Flip to sampling-based verification when listing all chunk_ids becomes too slow.
+
+**D-2026-09-17-33 — preflight = model check + ensure_collection + compatibility check**
+All before loading or embedding | Letting errors surface late | Refusals take ~0.2 s instead of arriving after ~198 s of embedding. The planned separate `health_check()` call was removed: mutation testing showed it could never fail after `ensure_collection`, which already raises on an unreachable or misconfigured collection | Flip to adding an explicit readiness check if `ensure_collection` ever stops validating an existing collection.
+
+**D-2026-09-17-34 — `store index` delegates to the ingestion job**
+One implementation, two commands | Removing `store index`; keeping two implementations | Existing notes and deep dive 14 reference `store index`; two implementations would drift | Flip to removing the alias once docs point only to `python -m src.vectorstore.ingest`.
+
+**D-2026-09-17-35 — tests: in-memory Qdrant, fake embedding client, temp chunks dir**
+12 tests covering success, idempotency, orphan removal and its guard, refusals, rebuild, failures at preflight/load/embed/verify | Mocks; live runs only | Real filter, delete and scroll behaviour with no server; 10 hand mutants of the job all killed | Flip to adding a Docker-backed CI job when server-only behaviour must be enforced automatically.

@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import logging
-import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -18,7 +17,14 @@ from typing import Any, Protocol
 
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ApiException
-from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue, PointStruct
+from qdrant_client.models import (
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    MatchAny,
+    MatchValue,
+    PointStruct,
+)
 
 from src.core.config import settings
 from src.ingestion.schemas import DocumentChunk, Embedding
@@ -184,6 +190,62 @@ class QdrantVectorStore:
     def count(self) -> int:
         return self._client.count(collection_name=self._collection, exact=True).count
 
+    def ensure_collection(self) -> bool:
+        return ensure_collection(self._client, self._collection, size=self._dim)
+
+    def count_incompatible(self) -> int:
+        """Stored points NOT made by this store's model digest and document prefix."""
+        # INTERVIEW: comparing against what is already STORED, not only against
+        # settings, is what catches a config change: if settings change, new
+        # embeddings and the upsert check agree with each other, but the existing
+        # points still record the vector space the collection was built in.
+        same_space = Filter(
+            must=[
+                FieldCondition(key="model_digest", match=MatchValue(value=self._model_digest)),
+                FieldCondition(
+                    key="document_prefix", match=MatchValue(value=self._document_prefix)
+                ),
+            ]
+        )
+        return self._client.count(
+            collection_name=self._collection,
+            count_filter=Filter(must_not=[same_space]),
+            exact=True,
+        ).count
+
+    def stored_chunk_ids_by_document(self) -> dict[str, set[str]]:
+        """Every stored chunk_id, grouped by doc_id."""
+        by_document: dict[str, set[str]] = {}
+        offset = None
+        while True:
+            # Only the two keys are requested: full payloads carry the chunk text
+            # and would make listing the index cost as much as downloading it.
+            points, offset = self._client.scroll(
+                collection_name=self._collection,
+                limit=1000,
+                offset=offset,
+                with_payload=["doc_id", "chunk_id"],
+                with_vectors=False,
+            )
+            for point in points:
+                payload = point.payload or {}
+                by_document.setdefault(payload["doc_id"], set()).add(payload["chunk_id"])
+            if offset is None:
+                return by_document
+
+    def delete_documents(self, doc_ids: Sequence[str]) -> None:
+        if not doc_ids:
+            return
+        self._client.delete(
+            collection_name=self._collection,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[FieldCondition(key="doc_id", match=MatchAny(any=list(doc_ids)))]
+                )
+            ),
+            wait=True,
+        )
+
     def _check_provenance(self, embeddings: Sequence[Embedding]) -> None:
         for e in embeddings:
             if e.model_digest != self._model_digest or e.document_prefix != self._document_prefix:
@@ -222,12 +284,21 @@ def main() -> None:
     parser.add_argument("--url", default="http://localhost:6333")
     parser.add_argument("--ollama-url", default="http://localhost:11434")
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("index", help="embed data/chunks and upsert into Qdrant")
+    index_parser = commands.add_parser("index", help="same as python -m src.vectorstore.ingest")
     search_parser = commands.add_parser("search", help="retrieve top-k chunks for a question")
     search_parser.add_argument("question")
     search_parser.add_argument("-k", type=int, default=5)
     commands.add_parser("health", help="exit 0 if the collection is ready")
+    # Imported here: ingest imports this module, so a top-level import would be circular.
+    from src.vectorstore.ingest import add_ingestion_arguments, run_from_args
+
+    add_ingestion_arguments(index_parser)
     args = parser.parse_args()
+
+    if args.command == "index":
+        # One ingestion implementation: `index` predates the ingestion job and is
+        # kept as an alias so existing notes and commands keep working.
+        raise SystemExit(run_from_args(args))
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -246,24 +317,6 @@ def main() -> None:
 
     embedder = Embedder(build_ollama_client(args.ollama_url), ollama_url=args.ollama_url)
     store = QdrantVectorStore(client, embedder)
-
-    if args.command == "index":
-        from src.ingestion.pipeline import read_chunks
-
-        chunks = read_chunks()
-        if not chunks:
-            raise SystemExit("no chunks found; run `python -m src.ingestion.pipeline` first")
-        ensure_collection(client)
-        started = time.perf_counter()
-        embeddings = embedder.embed_batch(chunks)
-        embedded_at = time.perf_counter()
-        store.upsert(embeddings)
-        print(
-            f"OK: {len(embeddings)} chunks embedded in {embedded_at - started:.1f}s, "
-            f"upserted in {time.perf_counter() - embedded_at:.1f}s; collection now holds "
-            f"{store.count()} points"
-        )
-        return
 
     for rank, result in enumerate(store.search_with_scores(args.question, args.k), start=1):
         snippet = " ".join(result.chunk.text.split())[:110]

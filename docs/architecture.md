@@ -113,3 +113,20 @@ Run: `python -m src.embedding.embedder`.
 Live (223 points): index 187s embed + 4.8s upsert; `query_points` ~18 ms; no HNSW index is built at
 this size (669 KB < 10,000 KB thresholds), so search is exact — verified equal to numpy brute force.
 Run: `python -m src.vectorstore.store {index,search "question" -k 5,health}`.
+
+## Ingestion job (P3-M5, 2026-09-17)
+
+`python -m src.vectorstore.ingest` (alias: `python -m src.vectorstore.store index`) runs
+`run_ingestion`: **preflight -> load -> embed -> upsert -> orphans -> verify**, and always writes
+`data/ingestion_log.json` (gitignored).
+
+| Guarantee | How |
+|---|---|
+| Model is the pinned one | Embedder built in preflight (digest check) |
+| No silent vector-space change | preflight counts stored points with a different digest/prefix; refuses unless `--rebuild` |
+| Embedding failure leaves index untouched | all chunks embedded before any write |
+| Deleted documents leave the index | orphans deleted, unless `report.json` shows chunking failures |
+| Index equals disk | exact `chunk_id` set comparison and zero incompatible points |
+| Failures are recorded | report written in `finally`, error re-raised, exit code 1 |
+
+Live: 223 chunks, embed 197.7 s, upsert 4.8 s, all other stages < 0.2 s; refusal in 0.2 s.

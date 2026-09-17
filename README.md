@@ -19,6 +19,7 @@ reasoning recorded rather than just the result.
 | 3 | Qdrant collection, model lock (M1–M2) | done |
 | 3 | Batch embedding (M3): 223 chunks, validated | done |
 | 3 | Qdrant vector store (M4): 223 points indexed, search + health | done |
+| 3 | Ingestion job (M5): preflight, orphan sync, verification, `data/ingestion_log.json` | done |
 
 Run the ingestion pipeline:
 

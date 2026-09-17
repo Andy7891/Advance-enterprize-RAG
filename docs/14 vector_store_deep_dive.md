@@ -1506,7 +1506,9 @@ Stale vectors can't be introduced by accident, and a mixed collection is detecta
   (stored `document_prefix = ''`). A config change therefore bypasses the guard, and `store index` would
   silently rebuild the collection in a different vector space. The fix is D-2026-09-17-20's rejected
   option C: compare against the provenance **already stored** in the collection (e.g. the query in
-  example 9, line 3) before writing. Not implemented yet; recorded as an open item.
+  example 9, line 3) before writing. **Implemented for the ingestion job in P3-M5** (preflight
+  refusal, verified live: `EMBED_DOCUMENT_PREFIX=""` aborted in 0.2 s); direct `store.upsert` calls
+  still bypass it.
 - **Docs:** [W3C PROV overview](https://www.w3.org/TR/prov-overview/) ·
   [Qdrant: filtering conditions (`match`, `except`)](https://qdrant.tech/documentation/concepts/filtering/#match-except)
 
