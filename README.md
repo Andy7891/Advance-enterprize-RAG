@@ -16,7 +16,9 @@ reasoning recorded rather than just the result.
 | 1 | Environment, Docker, CI | done |
 | 2 | Loader → chunker → enrichment → pipeline | done |
 | 2 | Chunk schema sign-off | done (this document) |
-| 3 | Embedding + Qdrant upsert | not started |
+| 3 | Qdrant collection, model lock (M1–M2) | done |
+| 3 | Batch embedding (M3): 223 chunks, validated | done |
+| 3 | Qdrant upsert (M4) | not started |
 
 Run the ingestion pipeline:
 

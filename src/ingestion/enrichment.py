@@ -28,7 +28,7 @@ DEFAULT_ENCODING = "cl100k_base"
 class TokenCounter(Protocol):
     """Anything that can turn text into a token count.
 
-    A Protocol rather than a concrete class for the same reason `Embedder` is
+    A Protocol rather than a concrete class for the same reason `SentenceEmbedder` is
     one in chunker.py: tests inject a trivial deterministic counter, so the
     suite never needs tiktoken's encoding file — which would otherwise make CI
     depend on a network fetch the first time it runs on a fresh runner.

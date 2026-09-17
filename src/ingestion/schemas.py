@@ -26,19 +26,20 @@ class DocumentChunk:
     """One retrievable unit of text, plus everything needed to trace, filter,
     and re-ingest it correctly.
 
-    Frozen (immutable) on purpose: chunk_id is a hash DERIVED from doc_id,
-    chunk_index, and text. If the dataclass were mutable, code elsewhere could
-    edit `.text` after construction and leave `.chunk_id` silently stale/wrong
-    — pointing at content that no longer matches. Immutability makes that a
-    type error instead of a silent data-integrity bug. If you need a "changed"
-    chunk, construct a new DocumentChunk (typically via `make_chunk` below).
+    Frozen (immutable) on purpose: text, char_count and approx_token_count are
+    computed together in `make_chunk`. If the dataclass were mutable, code
+    elsewhere could edit `.text` after construction and leave the counts (and
+    any vector already made from it) silently describing different content.
+    Immutability makes that an error instead of a silent data-integrity bug. If
+    you need a "changed" chunk, construct a new one (typically via `make_chunk`).
     """
 
     chunk_id: str
-    """Deterministic hash of (doc_id, chunk_index, text). Re-ingesting an
-    unchanged file reproduces the SAME chunk_id, so a Qdrant upsert overwrites
-    the existing point instead of creating a duplicate. This is what makes
-    ingestion idempotent — safe to re-run without manual dedup."""
+    """"<source_path>_<chunk_index>" — derived from POSITION, not content (see
+    `compute_chunk_id`). Re-ingesting reproduces the same IDs, so an upsert
+    overwrites instead of duplicating; but re-chunking reuses the same IDs for
+    different text and can leave surplus old chunks behind, which is why the
+    upsert layer must delete a document's chunks by doc_id first."""
 
     doc_id: str
     """Deterministic hash of the source file's path (relative to data/).
@@ -82,6 +83,35 @@ class DocumentChunk:
     (e.g. later: extracted entity names for the Neo4j graph). Keep first-class
     fields for things every chunk has and downstream code will filter/sort by
     often; use metadata for everything else."""
+
+
+@dataclass(frozen=True, slots=True)
+class Embedding:
+    """Contract 2: one chunk's vector, plus the provenance needed to trust it.
+
+    Carries the whole chunk rather than just its chunk_id so the upsert step
+    receives the vector and its payload as one object — there is no second list
+    to join back by ID, and therefore no way to attach a vector to the wrong
+    chunk.
+    """
+
+    chunk: DocumentChunk
+
+    vector: tuple[float, ...]
+    """A tuple rather than a list so the frozen dataclass is immutable all the
+    way down; a list could be edited in place after validation."""
+
+    model: str
+
+    model_digest: str
+    """Vectors are only comparable with vectors from the same weights. Recording
+    the digest on every vector makes a mixed-model collection detectable after
+    the fact, instead of only preventable at startup."""
+
+    document_prefix: str
+    """The task prefix is part of what was embedded, so it is as much a part of
+    the vector's identity as the model is — and unlike the model, nothing else
+    records it."""
 
 
 def compute_doc_id(source_path: str) -> str:

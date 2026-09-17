@@ -33,8 +33,13 @@ logger = logging.getLogger(__name__)
 BreakpointThresholdType = Literal["percentile", "standard_deviation", "interquartile", "gradient"]
 
 
-class Embedder(Protocol):
+class SentenceEmbedder(Protocol):
     """Structural type matching LangChain's Embeddings interface.
+
+    Named for what the chunker uses it for — embedding individual sentences to
+    find topic boundaries — so it is not confused with
+    `src.embedding.embedder.Embedder`, which embeds whole chunks for storage
+    with prefixes, pinning and validation this interface knows nothing about.
 
     Declared as a Protocol rather than importing LangChain's base class so
     tests can inject a trivial deterministic fake without any LangChain
@@ -97,8 +102,8 @@ class ChunkerConfig:
 class Chunker:
     """Turns one LoadedDocument into an ordered list of DocumentChunks."""
 
-    def __init__(self, embedder: Embedder, config: ChunkerConfig | None = None) -> None:
-        # Embedder is injected rather than constructed here so the choice of
+    def __init__(self, embedder: SentenceEmbedder, config: ChunkerConfig | None = None) -> None:
+        # The embedder is injected rather than constructed here so the choice of
         # provider (Ollama today, Cohere later) never becomes hardcoded into
         # the chunking logic, and tests can pass a fake.
         self._embedder = embedder
@@ -330,7 +335,7 @@ class Chunker:
         return chunks
 
 
-def build_ollama_embedder(base_url: str, model: str = settings.embed_model) -> Embedder:
+def build_ollama_embedder(base_url: str, model: str = settings.embed_model) -> SentenceEmbedder:
     """Construct the production embedder.
 
     Isolated in a factory so importing this module never opens a network

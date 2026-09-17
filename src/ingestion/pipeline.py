@@ -19,7 +19,7 @@ from pathlib import Path
 
 from src.core.config import settings
 from src.embedding.lock import verify_model
-from src.ingestion.chunker import Chunker, ChunkerConfig, Embedder, build_ollama_embedder
+from src.ingestion.chunker import Chunker, ChunkerConfig, SentenceEmbedder, build_ollama_embedder
 from src.ingestion.enrichment import (
     TokenCounter,
     build_tiktoken_counter,
@@ -143,11 +143,25 @@ def write_chunks(chunks: list[DocumentChunk], destination: Path) -> None:
     destination.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def read_chunks(chunks_dir: Path = DEFAULT_OUTPUT_DIR) -> list[DocumentChunk]:
+    """Load every chunk written by `write_chunks`, in a stable order.
+
+    Lets embedding run as its own stage from the files on disk, so changing the
+    embedding step never forces a re-chunk (which re-embeds every sentence).
+    """
+    chunks: list[DocumentChunk] = []
+    # Excluding the report by name rather than globbing "*.md.json": sources can
+    # also be .txt or .pdf, and a narrower glob would drop their chunks silently.
+    for path in sorted(p for p in chunks_dir.glob("*.json") if p.name != REPORT_FILENAME):
+        chunks.extend(DocumentChunk(**record) for record in json.loads(path.read_text("utf-8")))
+    return chunks
+
+
 def run_pipeline(
     *,
     data_root: Path = DEFAULT_DATA_ROOT,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
-    embedder: Embedder,
+    embedder: SentenceEmbedder,
     counter: TokenCounter,
     config: ChunkerConfig | None = None,
 ) -> PipelineReport:

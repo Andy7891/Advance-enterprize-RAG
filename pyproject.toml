@@ -23,6 +23,10 @@ dependencies = [
   # Embeddings for semantic chunk-boundary detection (maintained path;
   # langchain_community.embeddings.OllamaEmbeddings is deprecated).
   "langchain-ollama==1.1.0",
+  # Batch embedding for storage (src/embedding/embedder.py). Pinned directly:
+  # it is imported by our code, and only a transitive dep of langchain-ollama
+  # otherwise, which could change its version underneath us.
+  "ollama==0.6.2",
   # Knowledge graph (GraphRAG)
   "neo4j==6.2.0",
   # Vector database

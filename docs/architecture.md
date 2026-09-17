@@ -78,3 +78,19 @@ Every step is required; skipping any leaves old and new vectors in different spa
 3. Delete the Qdrant `chunks` collection.
 4. Re-run the ingestion pipeline (chunk boundaries depend on the model too).
 5. Recreate the collection and re-embed everything.
+
+## Embedding pipeline (P3-M3, 2026-09-17)
+
+`src/embedding/embedder.py` is the only path from chunk text to stored vectors, and enforces
+the locks above rather than trusting callers:
+
+| Guarantee | Where |
+|---|---|
+| Served model digest == pin | `Embedder.__init__` (calls `verify_model`) |
+| `search_document: ` on every chunk | `Embedder._embed_one_batch` |
+| Over-length input refused, never truncated | `truncate=False` on every request |
+| Count, 768 dims, finite, unit norm | `Embedder._validate`, per batch |
+| Provenance on every vector | `Embedding.model`, `.model_digest`, `.document_prefix` |
+
+Measured: 223 chunks in 199.9s at batch size 16 on CPU; batched vectors identical to single.
+Run: `python -m src.embedding.embedder`.

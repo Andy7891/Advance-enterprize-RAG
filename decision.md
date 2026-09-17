@@ -184,3 +184,37 @@ Store the model digest and refuse to run if Ollama serves a different one (pipel
 
 **D-2026-09-16-22 — task prefixes on by default, configurable**
 `search_query: ` / `search_document: ` per the nomic model card, held in config | Always on hardcoded; off | Following the model's training is the defensible default. A 2-query spot check showed prefixes narrowed the relevant/irrelevant gap (0.169 → 0.124, 0.107 → 0.083) — too small a sample to overrule the model card, but enough to demand a real evaluation | Flip to off if a proper retrieval evaluation shows better separation without prefixes — and budget a full re-embed, because the document prefix is in every stored vector.
+
+---
+
+## Phase 3, Microstep 3 — Embedding Pipeline (2026-09-17)
+
+**D-2026-09-17-01 — module lives in `src/embedding/embedder.py`**
+Next to `lock.py` | `src/retrieval/embeddings.py` as the spec named; a re-export from both paths | Everything about the embedding model (pin, prefixes, batching) in one package; "retrieval" is the query side | Flip if query-time embedding grows into its own package and document embedding is only one caller of it.
+
+**D-2026-09-17-02 — `Embedding` carries the whole chunk plus provenance**
+`Embedding(chunk, vector: tuple, model, model_digest, document_prefix)` in `schemas.py` | `Embedding(chunk_id, vector, ...)` joined later; bare aligned vector lists | No second list to join, so no way to pair a vector with the wrong chunk; digest and prefix recorded because nothing else records what produced a stored vector | Flip to chunk_id-only if embeddings are ever persisted separately from chunks at a scale where duplicating payloads matters.
+
+**D-2026-09-17-03 — call Ollama through the `ollama` client, pinned directly**
+`ollama.Client.embed(..., truncate=False)` | LangChain `OllamaEmbeddings`; raw urllib | LangChain's class exposes no `truncate` field (checked), so silent truncation could not be switched off; the client supports batched input natively | Flip to LangChain if it gains a truncate option and a second provider must be swappable behind one interface.
+
+**D-2026-09-17-04 — fixed batch size from config, default 16**
+`settings.embed_batch_size = 16` | One request for everything; token-budget batches | Measured on CPU, 64 chunks: 1 -> 93.9s, 16 -> 63.9s, 64 -> 76.8s; batching verified not to change vectors. Full corpus: 223 chunks in 199.9s | Flip to token-budget batches if chunk sizes vary enough that fixed batches time out, or retune upward on a GPU.
+
+**D-2026-09-17-05 — fail fast on any batch error, naming its chunk_ids**
+Raise `EmbeddingError` for server, HTTP or connection errors | Bisect and skip the bad chunk; retry with backoff | The hard cap means a 400 should be impossible, so one is a bug to stop for; skipping would build an incomplete index that looks complete. Verified: one oversized item fails its whole batch | Flip to retries once embedding runs against a remote or shared server where transient failures are normal.
+
+**D-2026-09-17-06 — validate count, dimension, finiteness and unit norm per batch**
+All four checks, before any Embedding is built | Count and dimension only; no checks | Each failure would otherwise reach Qdrant as a plausible vector; misalignment is undetectable afterwards. Mutation-tested: removing any check fails a test | Flip the norm check off (make it configurable) if a model that does not normalise is ever adopted.
+
+**D-2026-09-17-07 — the Embedder verifies the model and applies the prefix itself**
+`verify_model` in the constructor, `as_document` inside `embed_batch` | Caller responsibility; split responsibility | A caller cannot forget either, and an Embedder instance existing proves the pin matched | Flip if the same class must also embed raw, unprefixed text for another model or task.
+
+**D-2026-09-17-08 — embeddings stay in memory; M4 stores them**
+`embed_batch` returns `list[Embedding]` | Disk cache keyed by chunk/text/digest; writing straight to Qdrant | Keeps the embed/store boundary visible and avoids a cache with its own invalidation rules; re-embedding costs ~200s | Flip to a cache when the corpus grows enough that re-embedding costs more than maintaining invalidation.
+
+**D-2026-09-17-09 — rename the chunker's Protocol to `SentenceEmbedder`**
+New class keeps the spec name `Embedder` | Different name for the new class; two classes named `Embedder` | The chunker's interface embeds sentences for boundary detection and knows nothing of prefixes or pinning; one name for two concepts invites wrong imports. No code outside src/tests imported it | Flip never; historical notes keep the old name as a record.
+
+**D-2026-09-17-10 — `read_chunks` loads every JSON in data/chunks except the report**
+Exclude `report.json` by name | Glob `*.md.json` | The loader also supports .txt and .pdf sources; a markdown-only glob would silently drop their chunks | Flip if the output directory gains other non-chunk JSON files — then switch to a manifest.

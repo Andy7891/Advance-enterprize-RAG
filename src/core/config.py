@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     embed_query_prefix: str = "search_query: "
     embed_document_prefix: str = "search_document: "
 
+    # Throughput only — batching does not change the vectors (verified: identical
+    # single vs batched). Measured on CPU for 64 chunks: 1 -> 93.9s, 16 -> 63.9s,
+    # 64 -> 76.8s. Retune on different hardware; a GPU favours much larger batches.
+    embed_batch_size: int = 16
+
     qdrant_collection: str = "chunks"
 
 
