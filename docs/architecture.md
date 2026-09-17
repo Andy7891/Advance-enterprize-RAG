@@ -92,5 +92,5 @@ the locks above rather than trusting callers:
 | Count, 768 dims, finite, unit norm | `Embedder._validate`, per batch |
 | Provenance on every vector | `Embedding.model`, `.model_digest`, `.document_prefix` |
 
-Measured: 223 chunks in 199.9s at batch size 16 on CPU; batched vectors identical to single.
+Measured: 223 chunks in 199.9s at batch size 16 on CPU; batched vectors identical to single. Batch size does not change speed on this CPU once the model is warm (~1.16 chunks/s for sizes 1-32).
 Run: `python -m src.embedding.embedder`.

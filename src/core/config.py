@@ -45,8 +45,11 @@ class Settings(BaseSettings):
     embed_document_prefix: str = "search_document: "
 
     # Throughput only — batching does not change the vectors (verified: identical
-    # single vs batched). Measured on CPU for 64 chunks: 1 -> 93.9s, 16 -> 63.9s,
-    # 64 -> 76.8s. Retune on different hardware; a GPU favours much larger batches.
+    # single vs batched). On this CPU, with the model already loaded, every size
+    # from 1 to 32 ran at ~1.16 chunks/s, so 16 is chosen for fewer round trips
+    # and a bounded failure (one bad chunk fails 16, not all). An earlier reading
+    # that 16 was fastest came from a cold-model first run and was wrong.
+    # Retune on a GPU, where larger batches genuinely run in parallel.
     embed_batch_size: int = 16
 
     qdrant_collection: str = "chunks"

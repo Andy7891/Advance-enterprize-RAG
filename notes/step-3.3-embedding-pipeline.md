@@ -24,7 +24,8 @@
 ## Verified, not assumed
 ```
 batched vs single vectors      : identical (max abs diff 0.0)
-batch size, 64 chunks, CPU     : 1 -> 93.9s   16 -> 63.9s   64 -> 76.8s
+batch size, 32 chunks, warm CPU: 1, 4, 8, 16, 32 -> all ~1.16 chunks/s (no speed difference)
+                                 (first reading 93.9/63.9/76.8s was a cold-start artefact; corrected)
 full corpus                    : 223 chunks embedded in 199.9s, all validated (dim 768, digest 0a109f422b47)
 live failure path              : "embedding failed for ['company/about.md_0', 'TEST_oversized']: the input
                                   length exceeds the context length (status code: 400)"
@@ -38,7 +39,7 @@ ruff / mypy                    : clean
 |---|---|---|
 | Embedding carries the whole chunk | chunk_id + later join | No second list to misalign |
 | `ollama` client | LangChain `OllamaEmbeddings` | LangChain has no `truncate` option, so silent truncation couldn't be disabled |
-| Batch 16 from config | one big request | Fastest measured; one failure affects 16 chunks, not 223 |
+| Batch 16 from config | one big request | Not faster on this CPU (all sizes equal once warm); fewer round trips, and one failure affects 16 chunks, not 223 |
 | Fail fast | skip bad chunks | The size cap makes a 400 a bug; skipping builds an index that *looks* complete |
 | Verify in constructor | verify in caller | An Embedder existing proves the pin matched |
 | In-memory output | disk cache | ~200s re-embed is cheaper than cache invalidation rules |
