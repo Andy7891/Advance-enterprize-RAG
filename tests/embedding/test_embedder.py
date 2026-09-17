@@ -177,3 +177,18 @@ def test_read_chunks_round_trips_and_skips_the_report(tmp_path):
 
     # The .txt source proves the reader does not assume every source is markdown.
     assert loaded == about + notes
+
+
+def test_embed_query_applies_query_prefix_and_refuses_truncation():
+    client = FakeClient()
+    vector = make_embedder(client).embed_query("Who is the CEO?")
+    call = client.calls[0]
+    assert call["input"] == [f"{settings.embed_query_prefix}Who is the CEO?"]
+    assert call["truncate"] is False
+    assert isinstance(vector, tuple) and len(vector) == DIM
+
+
+def test_embed_query_is_validated_like_documents():
+    client = FakeClient(transform=lambda vectors: [v[:384] for v in vectors])
+    with pytest.raises(EmbeddingError, match="<query>: vector has 384 dims"):
+        make_embedder(client).embed_query("q")

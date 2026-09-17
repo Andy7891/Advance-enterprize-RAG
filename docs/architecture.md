@@ -94,3 +94,22 @@ the locks above rather than trusting callers:
 
 Measured: 223 chunks in 199.9s at batch size 16 on CPU; batched vectors identical to single. Batch size does not change speed on this CPU once the model is warm (~1.16 chunks/s for sizes 1-32).
 Run: `python -m src.embedding.embedder`.
+
+## Vector store (P3-M4, 2026-09-17)
+
+`src/vectorstore/store.py` — `QdrantVectorStore(client, query_embedder)`.
+
+| Concern | How |
+|---|---|
+| Point ID | `uuid5(POINT_ID_NAMESPACE, chunk_id)` — never change the namespace |
+| Payload | every `DocumentChunk` field + `model`, `model_digest`, `document_prefix` |
+| Re-ingest | per document: delete where `doc_id` matches, then upsert (`wait=True`); partial documents refused |
+| Provenance | embeddings with a different digest or prefix refused before any write |
+| Indexes | keyword on `doc_id`, `category` (created by `ensure_collection`) |
+| Query | `Embedder.embed_query` (`search_query: ` prefix) -> `query_points(limit=k)` |
+| Health | readiness: reachable AND collection exists with 768 / cosine |
+| Client | `build_qdrant_client` pins `Accept-Encoding: gzip` (see D-2026-09-17-23) |
+
+Live (223 points): index 187s embed + 4.8s upsert; `query_points` ~18 ms; no HNSW index is built at
+this size (669 KB < 10,000 KB thresholds), so search is exact — verified equal to numpy brute force.
+Run: `python -m src.vectorstore.store {index,search "question" -k 5,health}`.

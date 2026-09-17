@@ -18,7 +18,7 @@ reasoning recorded rather than just the result.
 | 2 | Chunk schema sign-off | done (this document) |
 | 3 | Qdrant collection, model lock (M1–M2) | done |
 | 3 | Batch embedding (M3): 223 chunks, validated | done |
-| 3 | Qdrant upsert (M4) | not started |
+| 3 | Qdrant vector store (M4): 223 points indexed, search + health | done |
 
 Run the ingestion pipeline:
 

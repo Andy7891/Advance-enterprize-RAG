@@ -1,6 +1,7 @@
-"""Batch embedding: list[DocumentChunk] -> list[Embedding].
+"""Embedding for storage and search: list[DocumentChunk] -> list[Embedding], and
+question -> query vector.
 
-This is the only path by which chunk text becomes stored vectors, so it is where
+This is the only path by which text becomes vectors, so it is where
 the P3-M2 guarantees are enforced rather than merely configured: the pinned model
 is verified, the document prefix is applied, over-length input is refused
 instead of truncated, and every vector is checked before anything downstream
@@ -20,7 +21,7 @@ import httpx
 import ollama
 
 from src.core.config import settings
-from src.embedding.lock import as_document, verify_model
+from src.embedding.lock import as_document, as_query, verify_model
 from src.ingestion.schemas import DocumentChunk, Embedding
 
 logger = logging.getLogger(__name__)
@@ -94,15 +95,28 @@ class Embedder:
             logger.info("Embedded %d/%d chunks", len(embeddings), len(chunks))
         return embeddings
 
+    def embed_query(self, text: str) -> tuple[float, ...]:
+        """Embed a search question with the query-side prefix."""
+        # INTERVIEW: the same class embeds both sides so the model check, the
+        # truncation policy and the validation can never differ between stored
+        # vectors and the questions compared against them — only the prefix does.
+        (vector,) = self._embed_texts(["<query>"], [as_query(text)])
+        return tuple(vector)
+
     def _embed_one_batch(self, batch: Sequence[DocumentChunk]) -> list[list[float]]:
-        ids = [chunk.chunk_id for chunk in batch]
+        return self._embed_texts(
+            [chunk.chunk_id for chunk in batch],
+            # INTERVIEW: the document prefix is applied here, not by callers,
+            # because a stored vector without it is wrong in a way no later
+            # step can detect.
+            [as_document(chunk.text) for chunk in batch],
+        )
+
+    def _embed_texts(self, ids: list[str], texts: list[str]) -> list[list[float]]:
         try:
             response = self._client.embed(
                 model=self._model,
-                # INTERVIEW: the document prefix is applied here, not by callers,
-                # because a stored vector without it is wrong in a way no later
-                # step can detect.
-                input=[as_document(chunk.text) for chunk in batch],
+                input=texts,
                 # INTERVIEW: Ollama truncates over-length input by default and
                 # returns a normal-looking vector for text it never read.
                 # Refusing turns silent recall loss into an error.

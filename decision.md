@@ -218,3 +218,46 @@ New class keeps the spec name `Embedder` | Different name for the new class; two
 
 **D-2026-09-17-10 — `read_chunks` loads every JSON in data/chunks except the report**
 Exclude `report.json` by name | Glob `*.md.json` | The loader also supports .txt and .pdf sources; a markdown-only glob would silently drop their chunks | Flip if the output directory gains other non-chunk JSON files — then switch to a manifest.
+
+---
+
+## Phase 3, Microstep 4 — Vector Store Client (2026-09-17)
+
+**D-2026-09-17-11 — module lives in `src/vectorstore/store.py`**
+Next to `setup.py` | `src/retrieval/vector_store.py` as the spec named; moving setup.py into `src/retrieval/` | Collection setup and point operations belong together, and moving P3-M1 code would churn its tests and docs for a name | Flip if a retrieval layer grows (hybrid search, reranking) that wraps several stores — then the store becomes one component under `src/retrieval/`.
+
+**D-2026-09-17-12 — point ID = uuid5(fixed namespace, chunk_id)**
+Deterministic UUIDv5 | Content-hash UUID; random uuid4 | Qdrant accepts only ints or UUIDs; a deterministic ID makes re-upserting overwrite. Mutation test showed random IDs are masked by the delete guard, so a dedicated ID test is needed | Flip to content-based IDs if chunks ever need stable identity across re-chunking (e.g. user feedback attached to a chunk).
+
+**D-2026-09-17-13 — delete by doc_id, then upsert, per document**
+Delete-then-upsert | Upsert then delete leftovers; recreate the collection | Simplest correct guard against stale positional chunks; verified live on a scratch collection (2 points -> re-upsert 1 -> 1). Plus an `IncompleteDocument` guard, because a partial list would otherwise delete the missing chunks | Flip to upsert-then-delete-leftovers if the brief per-document search gap matters (live traffic during re-indexing).
+
+**D-2026-09-17-14 — payload = every DocumentChunk field + model, digest, prefix**
+Full payload with provenance | IDs only with text from disk; full payload without provenance | Search returns complete chunks from one source; provenance makes mixed collections detectable (live: all 223 points in one digest/prefix group) | Flip to a slim payload if storage cost matters at scale, keeping provenance.
+
+**D-2026-09-17-15 — keyword payload indexes on doc_id and category**
+Created in `ensure_collection`, idempotently | No indexes; doc_id only | doc_id serves the delete guard, category serves filtered search; verified live in payload_schema. Local mode ignores indexes, so this is checked live, not in tests | Flip never at this scale; add indexes for any new filter field.
+
+**D-2026-09-17-16 — `Embedder.embed_query` owns query embedding**
+Query prefix, pin and validation in the same class as documents; the store receives it | Store calls Ollama itself; search takes a vector | The only difference between the two sides should be the prefix; duplicating the rest in the store is how they drift | Flip to vector-in search if queries are embedded elsewhere (e.g. a batched evaluation job).
+
+**D-2026-09-17-17 — `search()` per spec plus `search_with_scores()`**
+Both; `search` delegates | Chunks only; scored results only | Meets the spec signature without discarding scores that thresholds, evaluation and reranking need | Flip to scored-only once no caller uses the spec signature.
+
+**D-2026-09-17-18 — health_check means readiness, returns bool, never raises**
+Qdrant answers AND collection exists with the expected size and distance | Liveness only; readiness plus non-empty | A running Qdrant with a missing or wrongly sized collection fails every request; an empty collection is valid right after setup | Flip to include points_count > 0 for a query-serving API where empty means broken.
+
+**D-2026-09-17-19 — one wait=True upsert per document**
+Per-document calls | Fixed batches across documents; one call with wait=False | Aligns with the per-document delete; wait=True makes points searchable before returning. Live: 223 points, 76 documents in 4.8s | Flip to batched upserts when document counts make per-document round trips slow.
+
+**D-2026-09-17-20 — reject embeddings whose digest or prefix differs from settings**
+`ProvenanceMismatch` before any write | Store whatever arrives; also sample-check stored points | The startup check stops the wrong model embedding; this stops stale embeddings from an earlier model entering the collection. Mutation-tested | Flip to also sampling stored points if other writers can touch the collection.
+
+**D-2026-09-17-21 — tests use the real in-memory QdrantClient**
+`QdrantClient(":memory:")` | Mocked client; Docker Qdrant only | Real upsert, filter-delete and query semantics with no server; 10 hand mutants of the store all killed | Flip to adding Docker-backed integration tests in CI when behaviour that local mode lacks (indexes, HNSW) must be enforced automatically.
+
+**D-2026-09-17-22 — CLI with index / search / health**
+`python -m src.vectorstore.store` | Class only; hooking into the ingestion pipeline | Needed for live verification and experiments; keeps re-chunking and re-indexing separately runnable | Flip to pipeline integration once chunking parameters stabilise.
+
+**D-2026-09-17-23 — Qdrant CLI clients accept only gzip responses**
+`build_qdrant_client` sends `Accept-Encoding: gzip` | Default httpx negotiation (gzip, deflate, zstd); pinning zstandard | One live index failed with "zstd decompressor error: Allocation error" on a delete response; not reproducible in 200 deletes, a 70s idle test, or a rerun — root cause unknown. zstandard is only a langsmith dependency. gzip removes the failing decoder and was verified to take effect | Flip back to default negotiation if the zstd failure is diagnosed and fixed upstream.
