@@ -63,10 +63,13 @@ jobs:
       # exercising the code it claims to test gets caught (see P2-M5). Reported,
       # not enforced: a threshold tempts writing filler tests to hit a number.
       # -m "not tiktoken" keeps the run offline; that one test needs an encoding
-      # file a fresh runner would have to fetch over the network.
+      # file a fresh runner would have to fetch over the network. Live tests need
+      # Qdrant and Ollama, which this Windows runner cannot start as service
+      # containers, so they are deselected by name rather than left to skip
+      # quietly; -rs still lists anything else that skipped, with its reason.
       - name: Run pytest
         run: |
-          pytest tests/ -v -m "not tiktoken" --cov=src --cov-report=term-missing
+          pytest tests/ -v -rs -m "not tiktoken and not live" --cov=src --cov-report=term-missing
 
   build:
     runs-on: windows-latest

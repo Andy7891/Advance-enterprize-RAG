@@ -301,3 +301,37 @@ One implementation, two commands | Removing `store index`; keeping two implement
 
 **D-2026-09-17-35 — tests: in-memory Qdrant, fake embedding client, temp chunks dir**
 12 tests covering success, idempotency, orphan removal and its guard, refusals, rebuild, failures at preflight/load/embed/verify | Mocks; live runs only | Real filter, delete and scroll behaviour with no server; 10 hand mutants of the job all killed | Flip to adding a Docker-backed CI job when server-only behaviour must be enforced automatically.
+
+---
+
+## Phase 3, Microstep 6 — Unit & Integration Tests for Vector Store (2026-09-19)
+
+**D-2026-09-19-01 — `tests/test_retrieval.py` adds hermetic flow tests + live integration tests**
+Cross-component tests (chunks -> ingestion -> store -> search) with a toy model, plus live tests on the real model and server | Hermetic only; adding a labelled-set metric now | 61 unit tests already covered each component alone; nothing tested the components together, or the real server/model. A metric over labelled questions is evaluation work for a later phase | Flip to adding the metric once a labelled question set exists.
+
+**D-2026-09-19-02 — known-answer live checks by rank, known misses as `xfail(strict=True)`**
+3 known answers in the top 3; Carllm and CEO questions as strict xfails | No quality assertions; exact top-k snapshots | Records current retrieval behaviour both ways; a strict xfail fails the suite when the miss is fixed (verified: XPASS(strict) -> failed), so the record cannot go stale. The CEO miss was found while probing the subset before writing assertions | Flip to snapshots only if ranking must be frozen exactly (e.g. before a demo).
+
+**D-2026-09-19-03 — `live` marker, auto-skip with the reason when a service is down**
+`@live_test` = `pytest.mark.live` + `skipif` on reachability and on the data subset | Deselected by default; environment variable switch | Runs whenever services are up, with no extra command; verified: Qdrant stopped -> 11 live tests skipped, each naming the missing service | Flip to deselect-by-default if live tests become slow enough to annoy local runs.
+
+**D-2026-09-19-04 — live tests use a uniquely named scratch collection from 8 real documents**
+`test_live_<uuid8>`, filled once per session (20 chunks, ~21 s of embedding), deleted in `finally` | Read-only searches on the real `chunks`; Testcontainers | Isolated from the real index and from other runs; verified no `test_live_*` collection remains after runs | Flip to Testcontainers when tests must run where no Qdrant is already installed.
+
+**D-2026-09-19-05 — hermetic tests use a bag-of-words toy embedding model**
+Words hashed (hashlib, not `hash()`) into 768 slots, counted, normalised | Existing one-hot hashing fake; recorded real vectors | Deterministic and offline, yet a question finds the chunk sharing its words, so the flow can be tested with real questions | Flip to recorded real vectors if a hermetic test must depend on synonyms or meaning.
+
+**D-2026-09-19-06 — CLIs tested in-process with swapped-in builders**
+`run_from_args` / `main()` with `sys.argv` and monkeypatched client builders | Subprocess against live services; leaving CLIs untested | Covered the CLI code that was the bulk of the missing coverage; embedding/vectorstore coverage rose from 70-79% to 91-98% | Flip to subprocess tests if argument parsing or process exit behaviour itself breaks in practice.
+
+**D-2026-09-19-07 — live contract tests for known in-memory vs server differences**
+Server rejects id -1 (in-memory accepts), payload indexes exist on the server, client negotiates gzip | Parametrising all store tests over both clients; no contract tests | Small and targeted at differences already observed | Flip to full parametrisation if a new, unexpected difference is found.
+
+**D-2026-09-19-08 — live semantic tests assert rank, not scores**
+Expected chunk in the top 3 | Scores within a tolerance; snapshots | Robust to harmless score shifts (one question's #1 and #2 differ by 0.001); model drift is already caught by the digest pin | Flip to score tolerances if a change in confidence (not just order) must be detected.
+
+**D-2026-09-19-09 — CI deselects live tests explicitly and reports skips**
+`-rs -m "not tiktoken and not live"` | Linux job with a Qdrant service container; leaving live tests to skip | The Windows runner cannot start service containers; deselecting says so honestly instead of showing quiet skips | Flip to a Linux CI job with a Qdrant service when server-only behaviour needs protecting on every push.
+
+**D-2026-09-19-10 — shared helpers in a new `tests/support.py`, used by the new file only**
+Plain module of factories, the toy model and reachability checks | Moving helpers into conftest and editing 3 older files; a fourth copy | No churn to working tests; the older files can migrate later | Flip to migrating the older test files when they next need changes.

@@ -20,6 +20,7 @@ reasoning recorded rather than just the result.
 | 3 | Batch embedding (M3): 223 chunks, validated | done |
 | 3 | Qdrant vector store (M4): 223 points indexed, search + health | done |
 | 3 | Ingestion job (M5): preflight, orphan sync, verification, `data/ingestion_log.json` | done |
+| 3 | Retrieval tests (M6): hermetic flow + live tests, known misses as strict xfails | done |
 
 Run the ingestion pipeline:
 
@@ -91,6 +92,7 @@ certify chunk *quality*.
 ```bash
 pytest tests/ -q                                    # full suite
 pytest tests/ingestion/test_chunk_contract.py -v    # the schema contract only
+pytest tests/ -m live -rs                          # real Qdrant + Ollama (skip if down)
 pytest tests/ --cov=src --cov-report=term-missing   # coverage
 ```
 
