@@ -130,3 +130,19 @@ Run: `python -m src.vectorstore.store {index,search "question" -k 5,health}`.
 | Failures are recorded | report written in `finally`, error re-raised, exit code 1 |
 
 Live: 223 chunks, embed 197.7 s, upsert 4.8 s, all other stages < 0.2 s; refusal in 0.2 s.
+
+## Graph database (P4-M1, 2026-09-19)
+
+| Setting | Value | Why |
+|---|---|---|
+| Image | `neo4j:5.26.0` (Community, LTS) | pinned; verified with Python driver 6.2.0 |
+| Ports | 7474 HTTP/Browser, 7687 Bolt | drivers use Bolt |
+| Credentials | `NEO4J_USER` / `NEO4J_PASSWORD` in gitignored `.env`; compose requires the password | no well-known fallback |
+| First start only | `NEO4J_AUTH` applies only when `neo4j_data` is created; later: `ALTER CURRENT USER SET PASSWORD` | the trap observed in P4-M1 |
+| Plugins | APOC Core (bundled jar) | expected by graph tooling |
+| Memory | heap 512m-1G, page cache 512m | shares 7.6 GB with Ollama and Qdrant |
+| Healthcheck | `cypher-shell ... 'RETURN 1'` (credentials split from `NEO4J_AUTH`) | healthy = Bolt + auth work |
+| Readiness in code | `python -m src.graph.setup` | connectivity, auth, major version 5, APOC |
+
+Do not add custom `NEO4J_*` variables to the container: the image maps them to `neo4j.conf` settings
+and strict validation refuses to start on unknown ones.

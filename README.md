@@ -21,10 +21,12 @@ reasoning recorded rather than just the result.
 | 3 | Qdrant vector store (M4): 223 points indexed, search + health | done |
 | 3 | Ingestion job (M5): preflight, orphan sync, verification, `data/ingestion_log.json` | done |
 | 3 | Retrieval tests (M6): hermetic flow + live tests, known misses as strict xfails | done |
+| 4 | Neo4j (M1): authenticated 5.26 LTS + APOC, readiness check `python -m src.graph.setup` | done |
 
 Run the ingestion pipeline:
 
 ```bash
+cp .env.example .env          # then set NEO4J_PASSWORD (required)
 docker compose up -d ollama
 docker exec advancerag-ollama-1 ollama pull nomic-embed-text
 python -m src.ingestion.pipeline

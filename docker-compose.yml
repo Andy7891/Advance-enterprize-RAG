@@ -18,14 +18,34 @@ services:
       - "7474:7474" # Browser UI
       - "7687:7687" # Bolt protocol
     environment:
-      NEO4J_AUTH: "${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}"
+      # Required, not defaulted: a fallback password would silently run the graph
+      # with a known credential. NEO4J_AUTH is applied ONLY when neo4j_data is first
+      # created; afterwards it is ignored and the password must be changed in Cypher.
+      NEO4J_AUTH: "${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env (see .env.example)}"
+      # Do NOT add other NEO4J_* variables for our own use: the image turns every
+      # NEO4J_* variable into a neo4j.conf setting, and strict config validation
+      # then refuses to start on unknown ones (NEO4J_PASSWORD -> setting "PASSWORD").
+      # The APOC Core jar ships in the image's labs folder, so this enables it
+      # without a download; graph tooling (e.g. LangChain schema reads) expects it.
+      NEO4J_PLUGINS: '["apoc"]'
+      # Fixed sizes instead of auto-sizing from host RAM, which Ollama and Qdrant
+      # share on this machine; ample for a graph of this corpus's size.
+      NEO4J_server_memory_heap_initial__size: "512m"
+      NEO4J_server_memory_heap_max__size: "1G"
+      NEO4J_server_memory_pagecache_size: "512m"
     volumes:
       - neo4j_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      # Logs in over Bolt and runs a query, so "healthy" means the protocol and the
+      # credentials work -- an HTTP probe on 7474 passes even with a wrong password.
+      # Credentials are split out of NEO4J_AUTH ("user/password") by the container's
+      # shell: ${X%%/*} keeps what is before the first "/", ${X#*/} what is after it.
+      # $$ stops compose substituting them itself.
+      test: ["CMD-SHELL", "cypher-shell -a bolt://localhost:7687 -u \"$${NEO4J_AUTH%%/*}\" -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' || exit 1"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 10
+      start_period: 30s
 
   ollama:
     image: ollama/ollama:0.20.0
@@ -87,8 +107,8 @@ services:
       NEO4J_USER: "${NEO4J_USER:-neo4j}"
 
       # WHAT: Access authorization secret key for the graph database instance.
-      # WHY: Secures database connections with a fallback placeholder during local setups.
-      NEO4J_PASSWORD: "${NEO4J_PASSWORD:-changeme}"
+      # WHY: Required from .env with no fallback, so the stack never runs on a known password.
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env (see .env.example)}"
 
       # WHAT: Network endpoint connection string for local language model execution.
       # WHY: Directs text processing and generation requests to the 'ollama' service.

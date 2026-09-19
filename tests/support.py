@@ -22,6 +22,7 @@ from src.ingestion.schemas import DocumentChunk
 
 QDRANT_URL = "http://localhost:6333"
 OLLAMA_URL = "http://localhost:11434"
+NEO4J_HTTP_URL = "http://localhost:7474"
 
 
 def make_chunk(source: str, index: int, text: str) -> DocumentChunk:
@@ -122,3 +123,14 @@ def live_services_down() -> str | None:
         services = " and ".join(missing)
         return f"{services} not reachable; start with `docker compose up -d qdrant ollama`"
     return None
+
+
+def neo4j_down() -> str | None:
+    """None if the Neo4j HTTP endpoint answers, otherwise a reason to skip.
+
+    Only reachability decides skipping: a reachable server that rejects the
+    configured password is a real failure, not a missing service.
+    """
+    if reachable(NEO4J_HTTP_URL):
+        return None
+    return "Neo4j not reachable on :7474; start with `docker compose up -d neo4j`"

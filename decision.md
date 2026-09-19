@@ -335,3 +335,31 @@ Expected chunk in the top 3 | Scores within a tolerance; snapshots | Robust to h
 
 **D-2026-09-19-10 — shared helpers in a new `tests/support.py`, used by the new file only**
 Plain module of factories, the toy model and reachability checks | Moving helpers into conftest and editing 3 older files; a fourth copy | No churn to working tests; the older files can migrate later | Flip to migrating the older test files when they next need changes.
+
+---
+
+## Phase 4, Microstep 1 — Set Up Neo4j (2026-09-19)
+
+**D-2026-09-19-11 — reset the empty neo4j_data volume so it initialises from .env**
+Delete the P1-era volume (0 nodes, 0 relationships, verified) and let Neo4j re-initialise with NEO4J_AUTH from .env | Changing the password in place with ALTER CURRENT USER; keeping `changeme` | NEO4J_AUTH only applies when the volume is first created (the container log says so on every start), so a new .env password was silently rejected (verified: auth failure against the old volume). Resetting exercises the exact path a fresh clone takes. The deletion was blocked for the assistant by the permission classifier and run by the user | Flip to ALTER CURRENT USER as soon as the graph holds data worth keeping.
+
+**D-2026-09-19-12 — credentials in gitignored .env; compose requires the password**
+`NEO4J_PASSWORD` required via `${NEO4J_PASSWORD:?...}` for both neo4j and api services; `NEO4J_URI=bolt://localhost:7687` in .env for host-side scripts; Settings default password emptied | Keeping the `:-changeme` fallback; Docker secrets file | One source for Compose and Settings; a missing password fails loudly instead of running on a well-known one (verified: compose refuses without it). CI only builds the Dockerfile, so it is unaffected | Flip to Docker secrets (NEO4J_AUTH_FILE) if the stack is ever deployed beyond a single developer machine.
+
+**D-2026-09-19-13 — keep Neo4j 5.26.0 LTS**
+Pinned image already present | 2025.x calendar releases; 4.4 | Long-term support; verified with neo4j Python driver 6.2.0 (Bolt protocol 5.8) | Flip when a needed feature exists only in 2025.x.
+
+**D-2026-09-19-14 — enable APOC Core from the bundled jar**
+`NEO4J_PLUGINS='["apoc"]'` | No plugins; APOC + Graph Data Science | One line, no download (installed from /var/lib/neo4j/labs); 192 APOC procedures available; graph tooling such as LangChain's schema inspection expects it | Flip to adding GDS when community detection (Microsoft-style GraphRAG summaries) is implemented.
+
+**D-2026-09-19-15 — fixed memory: heap 512m-1G, page cache 512m**
+Explicit `NEO4J_server_memory_*` settings | Auto-sizing from host RAM; Docker memory limit | Predictable next to Ollama and Qdrant on a 7.6 GB host; verified via SHOW SETTINGS; container ~900 MiB at idle | Flip to larger values once the graph or queries outgrow them (watch for out-of-memory query errors).
+
+**D-2026-09-19-16 — healthcheck logs in with cypher-shell**
+`cypher-shell ... 'RETURN 1'` with credentials split from NEO4J_AUTH by shell parameter expansion | HTTP probe on 7474; Python-only check | "healthy" now means Bolt + authentication work. First attempt passed NEO4J_USER/NEO4J_PASSWORD as extra container variables and Neo4j refused to start: the image maps every NEO4J_* variable to a config setting | Flip to a dedicated health user if the admin password should not be used by probes.
+
+**D-2026-09-19-17 — `src/graph/setup.py`: build_driver, non-raising health_check, CLI**
+Readiness = connectivity + authentication + major version 5 + APOC loaded; settings read at call time; no `--password` flag | Manual Browser check only; also creating schema constraints now | Scriptable and testable like src/vectorstore/setup.py; schema waits until extraction decides the entities. Mutation-tested: 5 mutants killed | Flip to adding schema bootstrap here once the entity model is fixed.
+
+**D-2026-09-19-18 — tests: fake driver + read-only live tests**
+10 hermetic tests with a fake driver; 4 live tests skipped only when Neo4j is unreachable (a wrong password fails, it does not skip) | Live only; none | CI stays hermetic; the live tests prove the fresh volume took the .env password (old `changeme` rejected), APOC, memory and the HTTP endpoint. Community Edition has one user database, so later write tests need another isolation strategy than scratch databases | Flip to per-test labels or a throwaway container when graph writes are tested (P4-M2+).

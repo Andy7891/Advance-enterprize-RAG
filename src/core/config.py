@@ -9,9 +9,13 @@ class Settings(BaseSettings):
     # Service hostnames default to Docker Compose service names.
     # Override with real values in .env for local (non-Docker) dev.
     qdrant_url: str = "http://qdrant:6333"
+    # The compose service name; scripts on the host override it with
+    # NEO4J_URI=bolt://localhost:7687 in .env.
     neo4j_uri: str = "bolt://neo4j:7687"
     neo4j_user: str = "neo4j"
-    neo4j_password: str = "changeme"
+    # Empty rather than a guessable default: without .env, connecting fails with an
+    # authentication error instead of quietly using a well-known password.
+    neo4j_password: str = ""
     ollama_url: str = "http://ollama:11434"
 
     cohere_api_key: str = ""
