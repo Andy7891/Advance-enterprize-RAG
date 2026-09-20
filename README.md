@@ -23,6 +23,7 @@ reasoning recorded rather than just the result.
 | 3 | Retrieval tests (M6): hermetic flow + live tests, known misses as strict xfails | done |
 | 4 | Neo4j (M1): authenticated 5.26 LTS + APOC, readiness check `python -m src.graph.setup` | done |
 | 4 | Graph model (M2): 8 node labels, 10 relationship types, 8 uniqueness constraints, `python -m src.graph.schema` (graph still empty) | done |
+| 4 | Graph records + store (M3): validated `GraphNode` / `GraphEdge`, `GraphStore` with `upsert_node`, `upsert_edge`, `search_related`, `multi_hop_search`; tested live on synthetic data (no extractor yet) | done |
 
 Run the ingestion pipeline:
 

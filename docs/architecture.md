@@ -203,3 +203,28 @@ role-based access); performance reviews and prior employers (single-document fac
 already reaches); pricing tiers as nodes (contracts name 9 different tiers, so `tier` is a
 property); `WORKS_AT` and `PROVIDED_BY` (constant edges: every employee works at Insurellm, Insurellm
 is on every contract); `REPORTS_TO` (one explicit statement in 32 HR records).
+
+## Graph store (P4-M3, 2026-09-20)
+
+Two modules: [src/graph/records.py](../src/graph/records.py) defines what may be written, and
+[src/retrieval/graph_store.py](../src/retrieval/graph_store.py) writes and reads it.
+
+| Record | Holds | Checked when built |
+|---|---|---|
+| `NodeRef(label, key)` | a node's identity, nothing else | label is in the model; `key` is exactly the model's key; values are clean non-empty strings |
+| `GraphNode(label, key, properties)` | identity plus what describes it | the above, plus properties are storable, not `None`, and do not repeat the key |
+| `GraphEdge(type, source, target, properties)` | a relationship between two `NodeRef`s | type is in the model; endpoints have the labels the model allows; properties are declared for that type |
+
+| `GraphStore` method | Does | Notes |
+|---|---|---|
+| `upsert_node(node)` | `MERGE` on the full key, `SET n += props` | never deletes properties; safe to repeat |
+| `upsert_edge(edge)` | `MATCH` both endpoints, `MERGE` the edge, `SET r += props` | raises `MissingEndpoint`, naming the absent node; nodes must be loaded first |
+| `search_related(name, *, label, include_provenance, limit)` | every edge attached to the entity, either direction | exact `name`; all namesakes unless `label` narrows it; domain edges unless asked; ordered |
+| `multi_hop_search(start, hops, *, label, limit)` | names within `hops` steps, nearest first | 1 to 3 hops; domain edges; never the start; walks through nameless nodes |
+
+Constructing a `GraphStore` runs `check_schema` and refuses a graph whose constraints are not in force.
+
+What reads deliberately do **not** do: return chunk text or `chunk_id`s (a graph hit is entities and
+edges; reaching passages means following `MENTIONS`, a later step); find a node with no `name`
+(`Contract`, `Document` and `Chunk` are reached through neighbours); match case-insensitively; walk
+provenance edges, which would make two entities named in one chunk look 2 hops apart.
