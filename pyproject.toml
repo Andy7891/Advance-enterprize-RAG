@@ -78,7 +78,7 @@ include = ["src", "src.*"]
 [tool.pytest.ini_options]
 markers = [
   "tiktoken: needs tiktoken's encoding file (network on a cold cache); deselect with -m 'not tiktoken'",
-  "live: needs running Qdrant and Ollama (docker compose up -d qdrant ollama); skips itself when they are down",
+  "live: needs running Qdrant, Ollama or Neo4j (docker compose up -d qdrant ollama neo4j); skips itself when they are down",
 ]
 
 # Ruff replaces both black (formatting) and flake8 (linting) in one tool.

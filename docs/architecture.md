@@ -146,3 +146,60 @@ Live: 223 chunks, embed 197.7 s, upsert 4.8 s, all other stages < 0.2 s; refusal
 
 Do not add custom `NEO4J_*` variables to the container: the image maps them to `neo4j.conf` settings
 and strict validation refuses to start on unknown ones.
+
+## Graph model (P4-M2, 2026-09-20)
+
+The authoritative definition is `NODE_TYPES` and `RELATIONSHIP_TYPES` in
+[src/graph/schema.py](../src/graph/schema.py); the tables describe it for humans and
+`tests/graph/test_schema.py` asserts they agree. Apply and verify it with
+`python -m src.graph.schema` (`--check` verifies without writing).
+
+The graph holds **IDs, not text**. Chunk text stays in Qdrant, so a graph result and a vector result
+meet on `chunk_id` (Qdrant's point id is `point_id(chunk_id)`).
+
+<!-- graph-nodes:start -->
+
+| Node label | Layer | Identity (unique) | Meaning |
+|---|---|---|---|
+| `Document` | provenance | `doc_id` | one source file; `doc_id` is the SHA-256 of its path (as in the chunk schema) |
+| `Chunk` | provenance | `chunk_id` | one chunk, `{source_path}_{chunk_index}`; holds no text |
+| `Company` | domain | `name` | Insurellm and its clients; short name from the contract title, legal name is a property |
+| `Product` | domain | `name` | one of the 8 products, from the closed list in `data/products/` |
+| `Contract` | domain | `doc_id` | one contract, identified by its document (contract numbers are missing from many) |
+| `Employee` | domain | `name` | a person on the HR roster; never someone who only appears in a contract |
+| `Contact` | domain | `name`, `organization` | a person named in a contract; identity needs the organisation because namesakes exist |
+| `Location` | domain | `name` | a city as `City, State` with the full state name |
+
+<!-- graph-nodes:end -->
+
+<!-- graph-relationships:start -->
+
+| Relationship | From → To | Properties | Meaning |
+|---|---|---|---|
+| `HAS_CHUNK` | Document → Chunk | | the document was split into this chunk |
+| `MENTIONS` | Chunk → Company, Product, Contract, Employee, Contact, Location | | the chunk names this entity; the bridge from a graph hit to a `chunk_id` |
+| `DESCRIBED_IN` | Product, Contract, Employee → Document | | the entity's own page (product page, contract, HR record) |
+| `FOR_PRODUCT` | Contract → Product | | the product a contract licenses |
+| `WITH_CLIENT` | Contract → Company | | the client; Insurellm is always the other party, so it is not stored |
+| `SIGNED_BY` | Contract → Contact | `title` | a signatory, with the title as written in that contract |
+| `WORKS_ON` | Employee → Product | | the employee's role description names this product |
+| `BASED_IN` | Employee → Location | `remote` | where the employee works from |
+| `HAS_OFFICE` | Company → Location | `headquarters` | an office; `headquarters` marks the head office |
+| `FOUNDED` | Employee → Company | | co-founder, stated on the About page and in the HR record |
+
+<!-- graph-relationships:end -->
+
+What the database can and cannot enforce (Community Edition, observed on 5.26.0):
+
+| Rule | Enforced by |
+|---|---|
+| One node per identity | uniqueness constraints (8, created by `apply_schema`); each has a backing range index, so `MERGE` on the key is an index lookup |
+| A key property is present | **not** the database (existence constraints need Enterprise): the loader must `MERGE` with complete keys. `MERGE` raises on a null key; `CREATE` does not |
+| Two people with the same name are different people | the `Employee` / `Contact` split, and `organization` inside the `Contact` key |
+| Relationship endpoints have the right labels | **not** the database: `RELATIONSHIP_TYPES` is the reference, and the loader must use it |
+
+Left out on purpose, with the reason: salary and date of birth (sensitive, and Community has no
+role-based access); performance reviews and prior employers (single-document facts vector search
+already reaches); pricing tiers as nodes (contracts name 9 different tiers, so `tier` is a
+property); `WORKS_AT` and `PROVIDED_BY` (constant edges: every employee works at Insurellm, Insurellm
+is on every contract); `REPORTS_TO` (one explicit statement in 32 HR records).

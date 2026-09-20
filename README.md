@@ -22,6 +22,7 @@ reasoning recorded rather than just the result.
 | 3 | Ingestion job (M5): preflight, orphan sync, verification, `data/ingestion_log.json` | done |
 | 3 | Retrieval tests (M6): hermetic flow + live tests, known misses as strict xfails | done |
 | 4 | Neo4j (M1): authenticated 5.26 LTS + APOC, readiness check `python -m src.graph.setup` | done |
+| 4 | Graph model (M2): 8 node labels, 10 relationship types, 8 uniqueness constraints, `python -m src.graph.schema` (graph still empty) | done |
 
 Run the ingestion pipeline:
 
@@ -94,8 +95,9 @@ certify chunk *quality*.
 ```bash
 pytest tests/ -q                                    # full suite
 pytest tests/ingestion/test_chunk_contract.py -v    # the schema contract only
-pytest tests/ -m live -rs                          # real Qdrant + Ollama (skip if down)
+pytest tests/ -m live -rs                          # real Qdrant, Ollama, Neo4j (skip if down)
 pytest tests/ --cov=src --cov-report=term-missing   # coverage
+python -m src.graph.schema --check                  # graph constraints in force? (read-only)
 ```
 
 The contract tests **skip** when `data/chunks/` is empty, which is the normal state on a
