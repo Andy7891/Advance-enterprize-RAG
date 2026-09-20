@@ -276,8 +276,8 @@ def test_constraint_statements_are_idempotent_ddl():
     ],
 )
 def test_identifiers_that_are_not_plain_names_never_reach_the_database(bad):
-    # DDL cannot take parameters, so names are spliced into the text; that is only safe
-    # while nothing but plain identifiers can get through.
+    # A label or property name in constraint DDL cannot be a parameter, so it is spliced
+    # into the text; that is only safe while nothing but plain identifiers can get through.
     driver = FakeSchemaDriver()
     with pytest.raises(ValueError, match="not a plain identifier"):
         apply_schema(driver, (bad,))

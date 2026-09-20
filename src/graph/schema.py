@@ -25,9 +25,11 @@ from typing import Literal
 from src.core.config import settings
 from src.graph.setup import GraphDriver, build_driver, health_check
 
-# Neo4j cannot parameterise labels, property names or constraint names in DDL, so they
-# are spliced into the statement text. Restricting them to plain identifiers keeps that
-# safe even if a model is ever built from something other than this file's constants.
+# In constraint DDL a label or property name cannot be a parameter or a dynamic expression
+# (observed on 5.26: both are syntax errors), so they are spliced into the statement text.
+# Restricting them to plain identifiers keeps that safe even if a model is ever built from
+# something other than this file's constants. The constraint name is spliced too, for one
+# uniform rule, although 5.26 would accept it as a parameter.
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 # `CREATE CONSTRAINT` returns once the constraint exists, but over existing data its
