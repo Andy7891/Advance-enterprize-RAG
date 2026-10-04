@@ -249,6 +249,36 @@ class GraphStore:
         )
         return [row["entity"] for row in self._read(query, {"name": name, "limit": limit})]
 
+    def all_entity_names(self) -> dict[str, list[str]]:
+        """Every distinct `name` currently in the graph, grouped by label."""
+        query = " UNION ALL ".join(
+            # builds one "MATCH this label, return its name" clause per named label
+            f"MATCH (e:{label}) RETURN '{label}' AS label, e.name AS name"
+            for label in NAMED_LABELS
+        )
+        rows = self._read(query, {})
+        # runs the combined query and collects every row it returns
+        result: dict[str, list[str]] = {label: [] for label in NAMED_LABELS}
+        # starts every label with an empty list, even a label with zero nodes
+        for row in rows:
+            # goes through each returned row one at a time
+            result[row["label"]].append(row["name"])
+            # adds that row's name under that row's own label
+        return result
+        # gives back the finished label -> names mapping
+
+    def chunks_of_document(self, doc_id: str) -> list[str]:
+        """Every `chunk_id` belonging to this document, via `HAS_CHUNK`."""
+        query = (
+            "MATCH (d:Document {doc_id: $doc_id})-[:HAS_CHUNK]->(c:Chunk) "
+            "RETURN c.chunk_id AS chunk_id"
+        )
+        # names the query that follows HAS_CHUNK from the document to its chunks
+        rows = self._read(query, {"doc_id": doc_id})
+        # runs that query for the one document id passed in
+        return [row["chunk_id"] for row in rows]
+        # pulls just the chunk_id string out of every returned row
+
     # --- transactions ---------------------------------------------------------------
 
     def _write(self, work: Callable[[ManagedTransaction], T]) -> T:
