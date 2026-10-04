@@ -1,0 +1,12 @@
+# Streamlit settings for the chat page (P8-M1). Streamlit reads this file from the folder it is
+# started in, so run `streamlit run src/ui/app.py` from the repository root.
+
+[server]
+# Listen on this machine only. Streamlit's default is every network interface, and every question
+# typed into the page starts minutes of CPU-bound model work on this host, with no login in front.
+# Remove this line (or set 0.0.0.0) only on purpose, e.g. inside a container behind a proxy.
+address = "127.0.0.1"
+
+[browser]
+# No anonymous usage statistics sent to Streamlit.
+gatherUsageStats = false

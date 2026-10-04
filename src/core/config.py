@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # authentication error instead of quietly using a well-known password.
     neo4j_password: str = ""
     ollama_url: str = "http://ollama:11434"
+    # Unlike the service hostnames above, the chat UI (src/ui/app.py) is started on the host with
+    # `streamlit run`, so its default is the host-side address of the API. A compose `ui` service
+    # would set API_URL=http://api:8000 explicitly. Deliberately NOT validated here: this object is
+    # shared with the API and the scripts, so only the page checks it (src/ui/endpoint.py).
+    api_url: str = "http://localhost:8000"
 
     cohere_api_key: str = ""
 
