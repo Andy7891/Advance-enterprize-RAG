@@ -1,0 +1,73 @@
+{
+  "started_at": "2026-09-22T08:15:38+00:00",
+  "chunks_dir": "data\\chunks",
+  "rebuild": true,
+  "status": "succeeded",
+  "failed_stage": null,
+  "error": null,
+  "finished_at": "2026-09-22T08:15:54+00:00",
+  "stage_seconds": {
+    "preflight": 0.236,
+    "load": 0.017,
+    "extract": 0.055,
+    "resolve": 0.013,
+    "validate": 0.004,
+    "write": 15.037,
+    "verify": 0.054
+  },
+  "chunks_on_disk": 223,
+  "documents_on_disk": 76,
+  "extraction_warnings": [],
+  "nodes_extracted": 144,
+  "edges_extracted": 154,
+  "ambiguities": [],
+  "conflicts": [],
+  "nodes_written_by_label": {
+    "Company": 33,
+    "Contact": 29,
+    "Contract": 32,
+    "Employee": 32,
+    "Location": 9,
+    "Product": 8,
+    "Document": 76,
+    "Chunk": 223
+  },
+  "edges_written_by_type": {
+    "HAS_CHUNK": 223,
+    "DESCRIBED_IN": 72,
+    "FOUNDED": 1,
+    "HAS_OFFICE": 5,
+    "WITH_CLIENT": 32,
+    "FOR_PRODUCT": 32,
+    "SIGNED_BY": 46,
+    "BASED_IN": 32,
+    "WORKS_ON": 6,
+    "MENTIONS": 207
+  },
+  "nodes_in_db_by_label": {
+    "Document": 76,
+    "Chunk": 223,
+    "Company": 33,
+    "Product": 8,
+    "Contract": 32,
+    "Employee": 32,
+    "Contact": 29,
+    "Location": 9
+  },
+  "edges_in_db_by_type": {
+    "HAS_CHUNK": 223,
+    "MENTIONS": 207,
+    "DESCRIBED_IN": 72,
+    "FOR_PRODUCT": 32,
+    "WITH_CLIENT": 32,
+    "SIGNED_BY": 46,
+    "WORKS_ON": 6,
+    "BASED_IN": 32,
+    "HAS_OFFICE": 5,
+    "FOUNDED": 1
+  },
+  "verified": true,
+  "notes": [
+    "CEO contradiction: HR records Avery Lancaster as 'Co-Founder & Chief Executive Officer (CEO)', while Jennifer Rodriguez signs 7 contract(s) as ['Chief Executive Officer']. Both are loaded as written."
+  ]
+}
