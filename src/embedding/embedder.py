@@ -30,6 +30,15 @@ logger = logging.getLogger(__name__)
 # normalise (typical norms are far from 1) is caught.
 NORM_TOLERANCE = 1e-3
 
+EMBED_TIMEOUT_SECONDS = 60.0
+# a real embed_query call measured at 0.701s and a real 16-text embed_batch call measured
+# at 1.005s, both against this project's own warm, already-loaded Ollama (2026-09-30) -- 60s
+# leaves wide headroom over either, including for a cold-model load this has not measured,
+# while still turning a genuine hang into a bounded, visible failure. Previously the client
+# was built with no timeout kwarg at all, which ollama.Client passes through as timeout=None
+# -- confirmed via httpx.Client(timeout=None).timeout to mean connect/read/write/pool all
+# None, i.e. no timeout whatsoever, not httpx's own 5s default
+
 
 class EmbeddingError(RuntimeError):
     """A batch could not be embedded, or produced vectors that cannot be trusted."""
@@ -155,7 +164,10 @@ class Embedder:
 
 
 def build_ollama_client(ollama_url: str) -> EmbedClient:
-    return ollama.Client(host=ollama_url)
+    return ollama.Client(host=ollama_url, timeout=EMBED_TIMEOUT_SECONDS)
+    # bounds every embed() call this client makes -- previously unbounded (see
+    # EMBED_TIMEOUT_SECONDS above), and every /chat request embeds its query through this
+    # exact client via Embedder.embed_query, as the very first step of retrieval
 
 
 def main() -> None:

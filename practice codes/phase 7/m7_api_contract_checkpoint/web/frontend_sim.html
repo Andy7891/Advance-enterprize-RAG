@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>frontend-sim (loading)</title>
+<style>
+  body { font: 15px/1.45 system-ui, sans-serif; margin: 1.5rem auto; max-width: 62rem; padding: 0 1rem; }
+  code { background: #8882; padding: 0 .25em; border-radius: 3px; }
+  button { font: inherit; padding: .3rem .8rem; margin-right: .5rem; }
+  pre#answer { min-height: 3.2em; background: #8881; padding: .6rem; border-radius: 4px; white-space: pre-wrap; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border-bottom: 1px solid #8884; padding: .3rem .5rem; text-align: left; vertical-align: top; }
+  .PASS { color: #1a7f37; font-weight: 600; } .FAIL { color: #cf222e; font-weight: 600; }
+  .SKIP { color: #9a6700; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Frontend simulation</h1>
+<p>This page plays the part of a real frontend. Page origin <code id="origin"></code>,
+   API <code id="api"></code>, <span id="mode"></span>.</p>
+<p>
+  <button id="run">Run all checks</button>
+  <button id="start">Ask a slow question</button>
+  <button id="stop" disabled>Stop generating</button>
+</p>
+<h2>Live answer</h2>
+<pre id="answer"></pre>
+<h2>Checks</h2>
+<table><thead><tr><th>Result</th><th>Id</th><th>What a frontend needs</th><th>Evidence</th></tr></thead>
+<tbody id="results"></tbody></table>
+
+<script>
+// ---- setup ------------------------------------------------------------------------------------
+const params = new URLSearchParams(location.search);
+const API = (params.get('api') || location.origin).replace(/\/$/, '');
+// the API to call: this page's own origin unless ?api=... says otherwise
+const SAME_ORIGIN = new URL(API).origin === location.origin;
+const marker = (name) => `[[scenario:${name}]]`;
+// how a question picks one of the stub's scripted answers (scenarios.py); the real API has no such thing
+const $ = (id) => document.getElementById(id);
+$('origin').textContent = location.origin;
+$('api').textContent = API;
+$('mode').textContent = SAME_ORIGIN ? 'same origin: the browser lets the page talk to the API'
+                                    : 'DIFFERENT origin: the browser enforces CORS';
+
+class Skip extends Error {}
+const expect = (condition, message) => { if (!condition) throw new Error(message); };
+const results = [];
+
+async function step(id, title, fn) {
+  let verdict = 'PASS', evidence = '';
+  try { evidence = await fn(); }
+  catch (error) {
+    if (error instanceof Skip) { verdict = 'SKIP'; evidence = error.message; }
+    else { verdict = 'FAIL'; evidence = `${error.name}: ${error.message}`; }
+  }
+  results.push({ id, title, verdict, evidence });
+  const row = document.createElement('tr');
+  for (const [text, cls] of [[verdict, verdict], [id], [title], [evidence]]) {
+    const cell = document.createElement('td');
+    cell.textContent = text;
+    if (cls) cell.className = cls;
+    row.appendChild(cell);
+  }
+  $('results').appendChild(row);
+}
+
+// ---- an SSE parser written from the WHATWG spec (the third independent one) --------------------
+function createSseParser(onEvent) {
+  let buffer = '', data = [], type = '';
+  function line(text) {
+    if (text === '') {
+      if (data.length) onEvent({ type: type || 'message', data: data.join('\n') });
+      data = []; type = '';
+    } else if (!text.startsWith(':')) {
+      const colon = text.indexOf(':');
+      const field = colon === -1 ? text : text.slice(0, colon);
+      let value = colon === -1 ? '' : text.slice(colon + 1);
+      if (value.startsWith(' ')) value = value.slice(1);
+      if (field === 'data') data.push(value);
+      else if (field === 'event') type = value;
+    }
+  }
+  return function feed(chunk) {
+    buffer += chunk;
+    const hold = buffer.endsWith('\r') ? 1 : 0;
+    // a trailing CR may be the first half of a CRLF whose second half is in the next chunk
+    const usable = buffer.slice(0, buffer.length - hold);
+    const parts = usable.split(/\r\n|\r|\n/);
+    const partial = parts.pop();
+    // the text after the last line end is an unfinished line: keep it for the next chunk
+    buffer = partial + buffer.slice(buffer.length - hold);
+    for (const text of parts) line(text);
+  };
+}
+
+// ---- calling /chat the way a browser can: fetch + ReadableStream ---------------------------------
+let currentController = null;
+
+async function streamChat(body, { signal, onEvent } = {}) {
+  const t0 = performance.now();
+  const response = await fetch(`${API}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+    signal,
+  });
+  const out = { status: response.status, headers: response.headers, events: [], times: [] };
+  if (response.headers.get('content-type')?.startsWith('application/json')) {
+    out.json = await response.json();
+    return out;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  const feed = createSseParser((event) => {
+    out.events.push(event);
+    out.times.push(performance.now() - t0);
+    if (onEvent) onEvent(event);
+  });
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    feed(decoder.decode(value, { stream: true }));
+  }
+  feed(decoder.decode());
+  out.total = performance.now() - t0;
+  return out;
+}
+
+const showEvent = (event) => {
+  if (event.data !== '[DONE]' && !event.data.startsWith('[ERROR]')) $('answer').textContent += event.data;
+};
+
+// ---- the buttons a user would press ---------------------------------------------------------------
+async function askSlowQuestion() {
+  $('answer').textContent = '';
+  currentController = new AbortController();
+  $('start').disabled = true; $('stop').disabled = false;
+  try {
+    return await streamChat({ query: `${marker('slow')} Who founded Insurellm?`, k: 1 },
+                            { signal: currentController.signal, onEvent: showEvent });
+  } finally {
+    $('start').disabled = false; $('stop').disabled = true; currentController = null;
+  }
+}
+$('start').onclick = () => askSlowQuestion().catch((e) => { $('answer').textContent += `\n[${e.name}]`; });
+$('stop').onclick = () => { if (currentController) currentController.abort(); };
+
+// ---- the checks -----------------------------------------------------------------------------------
+async function runAll() {
+  $('results').textContent = '';
+  results.length = 0;
+  let scenarios = null;
+  if (SAME_ORIGIN) {
+    try { scenarios = await (await fetch(`${API}/web/scenarios.json`)).json(); } catch (e) { scenarios = null; }
+  }
+  const needsStub = () => { if (!scenarios) throw new Skip('not the stub server: no scripted scenarios to compare with'); };
+  const needsCors = () => { if (SAME_ORIGIN) throw new Skip('same-origin run: CORS does not apply'); };
+  const needsSame = () => { if (!SAME_ORIGIN) throw new Skip('cross-origin run: the browser blocks this page from the API'); };
+  const envelope = (json, code) => {
+    expect(json && Object.keys(json).join() === 'error', `top-level keys ${json && Object.keys(json)}`);
+    expect(json.error.code === code, `code ${json.error.code}, expected ${code}`);
+    return json.error.message;
+  };
+
+  await step('B1', 'GET /health returns JSON the page can read', async () => {
+    needsSame();
+    const response = await fetch(`${API}/health`);
+    const body = await response.json();
+    expect(response.status === 200 && body.status === 'ok', `status ${response.status}`);
+    return `200, ${JSON.stringify(body)}`;
+  });
+
+  await step('B2', 'POST /chat streams events into the page as they are generated', async () => {
+    needsSame();
+    $('answer').textContent = '';
+    const out = await streamChat({ query: `${marker('plain')} Who founded Insurellm?`, k: 2 }, { onEvent: showEvent });
+    expect(out.status === 200, `status ${out.status}`);
+    const type = out.headers.get('content-type');
+    expect(type.startsWith('text/event-stream'), `content-type ${type}`);
+    const n = out.events.length;
+    expect(out.events[n - 1].data === '[DONE]', 'the stream did not end with [DONE]');
+    expect(/^\n\nSources:\n\[1\] /.test(out.events[n - 2].data), 'no source list before [DONE]');
+    const spread = out.times[4] - out.times[0];
+    expect(spread > 300, `first-to-fifth event spread ${spread.toFixed(0)} ms: not incremental`);
+    return `${n} events, first at ${out.times[0].toFixed(0)} ms, fifth at ${out.times[4].toFixed(0)} ms; answer shown: "${$('answer').textContent}"`;
+  });
+
+  await step('B3', 'Awkward line endings in the model text arrive intact', async () => {
+    needsSame(); needsStub();
+    const expected = scenarios.framing.expected;
+    const out = await streamChat({ query: `${marker('framing')} hi`, k: 2 });
+    for (let i = 0; i < expected.length; i++) {
+      expect(out.events[i] && out.events[i].data === expected[i],
+             `fragment ${i}: expected ${JSON.stringify(expected[i])}, got ${JSON.stringify(out.events[i] && out.events[i].data)}`);
+    }
+    expect(out.events.length === expected.length + 2, `${out.events.length} events: one was split or forged`);
+    expect(out.events.every((e) => e.type === 'message'), 'a fragment forged an event type');
+    return `${expected.length} fragments (CR, CRLF, LF, forged fields, U+2028) rebuilt exactly by the browser's own parser`;
+  });
+
+  await step('B4', 'A failure mid-answer arrives as an in-band [ERROR] on a 200', async () => {
+    needsSame(); needsStub();
+    const out = await streamChat({ query: `${marker('fails-midstream')} hi`, k: 1 });
+    const last = out.events[out.events.length - 1].data;
+    expect(out.status === 200 && last.startsWith('[ERROR]'), `status ${out.status}, last ${last}`);
+    expect(!out.events.some((e) => e.data === '[DONE]'), '[DONE] after a failure');
+    return `200, ${out.events.length - 1} content events, then ${last}`;
+  });
+
+  await step('B5', 'Stop generating aborts the read and leaves the server usable', async () => {
+    needsSame(); needsStub();
+    let seen = 0;
+    let aborted = false;
+    const original = showEvent;
+    const watcher = (event) => { original(event); seen += 1; if (seen === 3) $('stop').click(); };
+    // the third event "clicks" the real Stop button, exactly as a user would
+    $('answer').textContent = '';
+    currentController = new AbortController();
+    $('stop').disabled = false;
+    try {
+      await streamChat({ query: `${marker('slow')} hi`, k: 1 }, { signal: currentController.signal, onEvent: watcher });
+    } catch (error) {
+      aborted = error.name === 'AbortError';
+      if (!aborted) throw error;
+    } finally { $('stop').disabled = true; currentController = null; }
+    expect(aborted, 'the read was not aborted');
+    const health = await fetch(`${API}/health`);
+    expect(health.status === 200, `/health ${health.status} after the abort`);
+    const again = await streamChat({ query: `${marker('plain')} hi`, k: 1 });
+    expect(again.events[again.events.length - 1].data === '[DONE]', 'a new question did not complete');
+    return `AbortError after ${seen} events; /health 200; a new question completed (${again.events.length} events)`;
+  });
+
+  await step('B6', 'Errors arrive as JSON the page can branch on (400, 422, 404, 405)', async () => {
+    needsSame();
+    const bad = await streamChat('{bad');
+    expect(bad.status === 400, `malformed JSON: ${bad.status}`);
+    envelope(bad.json, 'invalid_json');
+    const invalid = await streamChat({ query: 'hi', k: 0 });
+    expect(invalid.status === 422, `k=0: ${invalid.status}`);
+    const message = envelope(invalid.json, 'validation_error');
+    expect(message.includes('body.k'), `message does not name the field: ${message}`);
+    const missing = await fetch(`${API}/no-such-route`);
+    expect(missing.status === 404, `unknown path: ${missing.status}`);
+    envelope(await missing.json(), 'not_found');
+    const wrong = await fetch(`${API}/chat`);
+    expect(wrong.status === 405 && wrong.headers.get('allow') === 'POST', `GET /chat: ${wrong.status}, Allow ${wrong.headers.get('allow')}`);
+    envelope(await wrong.json(), 'method_not_allowed');
+    return `400 invalid_json; 422 validation_error ("${message}"); 404 not_found; 405 method_not_allowed with Allow: POST`;
+  });
+
+  await step('B7', 'EventSource cannot be used: it only makes GET requests, and /chat is POST', async () => {
+    needsSame();
+    const outcome = await new Promise((resolve) => {
+      const source = new EventSource(`${API}/chat`);
+      const timer = setTimeout(() => { source.close(); resolve('no event within 5 s'); }, 5000);
+      source.onopen = () => { clearTimeout(timer); source.close(); resolve('OPENED'); };
+      source.onerror = () => { clearTimeout(timer); const state = source.readyState; source.close(); resolve(`error, readyState ${state} (2 = CLOSED)`); };
+    });
+    expect(outcome.startsWith('error'), `EventSource: ${outcome}`);
+    return `new EventSource('/chat') -> ${outcome}: use fetch + ReadableStream instead`;
+  });
+
+  await step('B8', 'A page on another origin cannot read the API (no CORS headers)', async () => {
+    needsCors();
+    let blocked = null;
+    try { await fetch(`${API}/health`); } catch (error) { blocked = error; }
+    expect(blocked instanceof TypeError, 'the cross-origin read was NOT blocked: CORS headers are now sent');
+    return `fetch(GET /health) rejected with ${blocked.name}: ${blocked.message}`;
+  });
+
+  await step('B9', 'A cross-origin JSON POST is stopped at the preflight', async () => {
+    needsCors();
+    let blocked = null;
+    try {
+      await fetch(`${API}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'hi', k: 1 }) });
+    } catch (error) { blocked = error; }
+    expect(blocked instanceof TypeError, 'the cross-origin POST was NOT blocked');
+    return `fetch(POST /chat, application/json) rejected with ${blocked.name}: ${blocked.message}`;
+  });
+
+  const tally = (verdict) => results.filter((r) => r.verdict === verdict).length;
+  document.title = `frontend-sim DONE: ${tally('PASS')} pass, ${tally('FAIL')} fail, ${tally('SKIP')} skip`;
+  window.__results = results;
+  window.__done = true;
+}
+
+$('run').onclick = runAll;
+if (params.get('auto') === '1') runAll();
+</script>
+</body>
+</html>
