@@ -134,3 +134,14 @@ def neo4j_down() -> str | None:
     if reachable(NEO4J_HTTP_URL):
         return None
     return "Neo4j not reachable on :7474; start with `docker compose up -d neo4j`"
+
+
+def ollama_down() -> str | None:
+    """None if Ollama answers, otherwise a reason to skip.
+
+    Separate from live_services_down(): a generation-only test has no reason to also
+    require Qdrant to be up.
+    """
+    if reachable(f"{OLLAMA_URL}/api/version"):
+        return None
+    return "Ollama not reachable; start with `docker compose up -d ollama`"

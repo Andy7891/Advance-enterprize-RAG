@@ -92,6 +92,12 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W"]  # pycodestyle errors/warnings + pyflakes (flake8's core rules)
 
+[tool.ruff.lint.per-file-ignores]
+# SYSTEM_PROMPT is published prompt text, verbatim from docs/prompts.md: re-wrapping its long
+# lines would change what the model receives, so E501 (line too long) is not enforced for
+# this one file. Scope note: the ignore is file-wide, so it also hides a long CODE line here.
+"src/orchestration/prompts.py" = ["E501"]
+
 # mypy: static type checking, separate concern from ruff (ruff does NOT type-check).
 # TODO(learning): try flipping `strict = true` once your codebase has more type
 # hints, and see how many errors it surfaces — that's mypy teaching you where

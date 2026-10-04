@@ -58,5 +58,13 @@ class Settings(BaseSettings):
 
     qdrant_collection: str = "chunks"
 
+    # --- Local generation model (P6-M1) ----------------------------------------
+    # No digest lock here on purpose (contrast embed_model_digest above): a drifted
+    # embedding model makes stored vectors SILENTLY wrong with no error at all, so it
+    # is hard-pinned. A drifted generation model just answers with different wording
+    # or quality -- an observable difference, not a silent, undetectable one -- so a
+    # lighter "is it pulled and does it actually answer" check is enough for now.
+    llm_model: str = "mistral"
+
 
 settings = Settings()
