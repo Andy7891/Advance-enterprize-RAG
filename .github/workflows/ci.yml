@@ -72,7 +72,10 @@ jobs:
           pytest tests/ -v -rs -m "not tiktoken and not live" --cov=src --cov-report=term-missing
 
   build:
-    runs-on: windows-latest
+    # ubuntu, not windows: the Dockerfile builds a LINUX image (FROM python:3.11-slim, which has no
+    # Windows variant) and a windows-latest runner's Docker engine only runs Windows containers,
+    # so the build failed there within seconds. The lint and test jobs stay on Windows.
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
